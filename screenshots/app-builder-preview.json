@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Trazado",
+      "hasCanvas": false,
+      "bodyTextLen": 149,
+      "bodyTextHash": "9ce7d03a783f0ddf2b8e5e6c7549cbc3353bc3e91a23d6153b6cf34e693b5cc7",
+      "bodyTextPrefix": "200 mi + − Leaflet | Tiles © Esri Trazado Satellite Share Select",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Trazado",
+      "hasCanvas": false,
+      "bodyTextLen": 125,
+      "bodyTextHash": "54c50fc105193d2394fe9b9af61a7ac987a50203b1a96770fa0354ad3f0f06a5",
+      "bodyTextPrefix": "200 mi + − Leaflet | Tiles © Esri Trazado Share Select UG New UG",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}

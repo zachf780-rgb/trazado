@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8081/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Trazado",
+      "hasCanvas": false,
+      "bodyTextLen": 115,
+      "bodyTextHash": "5e506d74b39d9d2293004316ff2cbc93084f40e70b9079d3e61ab81c05cf22ef",
+      "bodyTextPrefix": "Trazado Satellite Share Select LINES UG New UG Pull Aerial Overl",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/publish-check.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Trazado",
+      "hasCanvas": false,
+      "bodyTextLen": 91,
+      "bodyTextHash": "64543be85d8f91aa1d588a30b2c7e13ae52147be4fb2ef90c00ffa6f3e13f05c",
+      "bodyTextPrefix": "Trazado Share Select UG New UG Pull Aerial Overlash Drop Ped V V",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/publish-check-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/publish-check.json"
+}
