@@ -433,6 +433,7 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
     }
     return `      <Placemark>
         <name>${escapeXml(text)}</name>
+        <ExtendedData><Data name="spanLabel"><value>1</value></Data></ExtendedData>
         <Style>
           <IconStyle><scale>0</scale></IconStyle>
           <LabelStyle>
@@ -949,7 +950,36 @@ function parseCoordinates(raw: string): LatLng[] {
 }
 
 function isFootageName(name: string): boolean {
-  return /^\d[\d,]*\s*('+|ft|feet)?$/i.test(name.trim());
+  const lines = name
+    .replace(/^remove\s+/i, "")
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return false;
+  const footage = /^\d[\d,]*\s*(?:'+|ft|feet)$/i;
+  const km = /^\d+(?:\.\d+)?\s*km$/i;
+  const tag = /^(?:\.625|\.875|rg6|rg11|rock|flex|fiber|empty|\d+\s*ct)$/i;
+  const [head, ...rest] = lines;
+  if (!head) return false;
+  if (rest.length === 0) {
+    if (footage.test(head) || km.test(head) || tag.test(head)) return true;
+    const split = head.split(/\s+/);
+    const lead = split[0] ?? "";
+    const tail = split.slice(1).join(" ");
+    return (footage.test(lead) || km.test(lead)) && tail.split("/").every((part) => tag.test(part.trim()));
+  }
+  return (footage.test(head) || km.test(head)) && rest.every((line) => line.split("/").every((part) => tag.test(part.trim())));
+}
+
+function iconStyleOf(pm: Element): { scale: number | null; href: string } {
+  const iconStyle = pm.getElementsByTagName("IconStyle")[0];
+  if (!iconStyle) return { scale: null, href: "" };
+  const raw = textContent(iconStyle.getElementsByTagName("scale")[0] ?? null);
+  const scale = raw === "" ? null : Number(raw);
+  return {
+    scale: Number.isFinite(scale) ? scale : null,
+    href: textContent(iconStyle.getElementsByTagName("href")[0] ?? null),
+  };
 }
 
 function isEquipmentMark(styleUrl: string, icon: string, storedKind: string): boolean {
@@ -1106,11 +1136,12 @@ export async function parsePlantFile(file: File): Promise<
     }
 
     if (pointEl) {
-      const scale = styleScale.get(styleUrl) ?? 1;
-      const icon = (styleIcon.get(styleUrl) ?? "").toLowerCase();
+      const inline = iconStyleOf(pm);
+      const icon = (inline.href || styleIcon.get(styleUrl) || "").toLowerCase();
       const storedKind = dataValue(pm, "kind");
       const equipment = isEquipmentMark(styleUrl, icon, storedKind);
-      if (!equipment && (scale === 0 || isFootageName(name))) continue;
+      const scale = inline.scale ?? styleScale.get(styleUrl) ?? 1;
+      if (!equipment && (scale === 0 || icon.includes("label-") || isFootageName(name))) continue;
       const path = parseCoordinates(
         textContent(pointEl.getElementsByTagName("coordinates")[0]),
       );

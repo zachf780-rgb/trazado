@@ -9,3 +9,5 @@ dist/
 .tanstack/
 *.log
 .preview/
+.vercel
+.env*
