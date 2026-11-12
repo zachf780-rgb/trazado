@@ -429,7 +429,7 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
         <ExtendedData><Data name="spanLabel"><value>1</value></Data></ExtendedData>
         <Style>
           <IconStyle>
-            <scale>${large ? 0.4 : 0.46}</scale>
+            <scale>${large ? 2.1 : 2.4}</scale>
             <hotSpot x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
             <Icon><href>${escapeXml(artHref(text, hex, large))}</href></Icon>
           </IconStyle>
