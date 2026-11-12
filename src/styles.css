@@ -167,7 +167,7 @@
   transform: translate(-50%, -50%);
   text-align: center;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 8px;
   font-weight: 700;
   letter-spacing: 0.01em;
   line-height: 1.15;
@@ -183,16 +183,27 @@
 }
 
 .footage-label.size-sm .footage-stack {
+  font-size: 7px;
+}
+
+.footage-label.size-md .footage-stack {
   font-size: 8px;
 }
 
 .footage-label.size-lg .footage-stack {
-  font-size: 14px;
+  font-size: 10px;
 }
 
 .footage-label.size-sm .footage-detail,
 .footage-label.size-sm.glow .footage-feet,
 .footage-label.size-sm.glow .footage-detail {
+  font-size: 8px;
+  -webkit-text-stroke: 2px #fff;
+}
+
+.footage-label.size-md .footage-detail,
+.footage-label.size-md.glow .footage-feet,
+.footage-label.size-md.glow .footage-detail {
   font-size: 9px;
   -webkit-text-stroke: 2.2px #fff;
 }
@@ -200,8 +211,8 @@
 .footage-label.size-lg .footage-detail,
 .footage-label.size-lg.glow .footage-feet,
 .footage-label.size-lg.glow .footage-detail {
-  font-size: 16px;
-  -webkit-text-stroke: 4px #fff;
+  font-size: 12px;
+  -webkit-text-stroke: 3px #fff;
 }
 
 .footage-label .footage-feet,

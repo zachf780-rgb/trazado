@@ -396,9 +396,15 @@ function outlinedLabelDataUrl(text: string, color: string, plate: boolean, large
 }
 
 function labelIconScale(size: LabelSize, large: boolean): number {
-  if (size === "lg") return large ? 2.1 : 2.4;
-  if (size === "sm") return large ? 1.15 : 1.3;
-  return large ? 1.55 : 1.75;
+  if (size === "lg") return large ? 1.55 : 1.75;
+  if (size === "sm") return large ? 0.85 : 0.95;
+  return large ? 1.15 : 1.3;
+}
+
+function cableGapFt(size: LabelSize): number {
+  if (size === "lg") return 9;
+  if (size === "sm") return 4;
+  return 6;
 }
 
 function kmlPaint(hex: string, opacity: number): string {
@@ -610,7 +616,7 @@ ${slashXml(slashMarks(path))}`;
             const footage = textMark(parts.footage, span.labelAt, labelColor, hex, false, size);
             if (!line.parallel) {
               return parts.detail
-                ? [footage, textMark(parts.detail, offsetBeside(span.labelAt, span.from, span.to, 14, 1), labelColor, hex, true, size)].join("\n")
+                ? [footage, textMark(parts.detail, offsetBeside(span.labelAt, span.from, span.to, cableGapFt(size), 1), labelColor, hex, true, size)].join("\n")
                 : footage;
             }
             const cableMark = (name: string, at: LatLng, kmlColor: string, paint: string) =>

@@ -46,7 +46,7 @@ function footageIcon(footage: string, detail: string, color: string, plate = fal
   const extra = detail
     ? `<span class="footage-detail">${escapeHtml(detail)}</span>`
     : "";
-  const classes = ["footage-label", plate ? "plate" : "", glow ? "glow" : "", size === "md" ? "" : `size-${size}`].filter(Boolean).join(" ");
+  const classes = ["footage-label", plate ? "plate" : "", glow ? "glow" : "", `size-${size}`].filter(Boolean).join(" ");
   return L.divIcon({
     className: classes,
     html: `<span class="footage-stack" style="color:${color}"><span class="footage-feet">${escapeHtml(footage)}</span>${extra}</span>`,
