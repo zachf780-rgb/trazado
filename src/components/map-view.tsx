@@ -725,10 +725,11 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
           opacity: poly.strokeOpacity ?? 1,
           fillColor: poly.fill || "#64748b",
           fillOpacity: poly.fillOpacity ?? 0.25,
+          interactive: tool !== "polygon",
         },
       );
       layer.on("click", (e) => {
-        if (isPointTool(usePlantStore.getState().tool)) return;
+        if (usePlantStore.getState().tool !== "select") return;
         L.DomEvent.stopPropagation(e);
         usePlantStore.getState().select({ type: "polygon", id: poly.id });
       });
@@ -1066,6 +1067,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
             fillColor: "#64748b",
             fillOpacity: 0.2,
             dashArray: "6 6",
+            interactive: false,
           },
         ).addTo(group);
       }
