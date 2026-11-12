@@ -42,16 +42,46 @@ const SAT_LABELS = L.tileLayer(
   { maxZoom: 23, maxNativeZoom: 19, attribution: "" },
 );
 
-function footageIcon(footage: string, detail: string, color: string, plate = false): L.DivIcon {
+function footageIcon(footage: string, detail: string, color: string, plate = false, glow = false): L.DivIcon {
   const extra = detail
     ? `<span class="footage-detail">${escapeHtml(detail)}</span>`
     : "";
+  const classes = ["footage-label", plate ? "plate" : "", glow ? "glow" : ""].filter(Boolean).join(" ");
   return L.divIcon({
-    className: plate ? "footage-label plate" : "footage-label",
+    className: classes,
     html: `<span class="footage-stack" style="color:${color}"><span class="footage-feet">${escapeHtml(footage)}</span>${extra}</span>`,
     iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
+}
+
+function spinOverlay(layer: L.ImageOverlay, degrees: number) {
+  if (!degrees) return;
+  const raw = layer as L.ImageOverlay & {
+    _reset: () => void;
+    _animateZoom?: (event: unknown) => void;
+  };
+  const apply = () => {
+    const img = layer.getElement();
+    if (!img) return;
+    const base = img.style.transform.replace(/ rotate\([^)]*\)/g, "");
+    img.style.transformOrigin = "center center";
+    img.style.transform = `${base} rotate(${degrees}deg)`;
+  };
+  const reset = raw._reset.bind(layer);
+  raw._reset = () => {
+    reset();
+    apply();
+  };
+  if (raw._animateZoom) {
+    const animate = raw._animateZoom.bind(layer);
+    raw._animateZoom = (event: unknown) => {
+      animate(event);
+      apply();
+    };
+  }
+  layer.on("load", apply);
+  apply();
 }
 
 function bindName(
@@ -572,6 +602,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         });
       }
       layer.addTo(group);
+      spinOverlay(layer, ov.rotation || 0);
       if (selection?.type === "overlay" && selection.id === ov.id) {
         const sw = L.marker([ov.south, ov.west], {
           draggable: true,
@@ -689,10 +720,11 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
       const layer = L.polygon(
         poly.path.map((p) => [p.lat, p.lng] as [number, number]),
         {
-          color: selected ? "#e8eaee" : "#a1a1aa",
+          color: poly.stroke || "#a1a1aa",
           weight: selected ? 2.5 : 2,
-          fillColor: "#64748b",
-          fillOpacity: 0.28,
+          opacity: poly.strokeOpacity ?? 1,
+          fillColor: poly.fill || "#64748b",
+          fillOpacity: poly.fillOpacity ?? 0.25,
         },
       );
       layer.on("click", (e) => {
@@ -806,7 +838,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         const tag2 = slotCableTag(line, 2);
         if (tag1) {
           L.marker([cable1At.lat, cable1At.lng], {
-            icon: footageIcon(tag1, "", preset.color, labelPlate),
+            icon: footageIcon(tag1, "", preset.color, labelPlate, true),
             interactive: false,
             keyboard: false,
             zIndexOffset: 390,
@@ -814,7 +846,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         }
         if (tag2) {
           L.marker([cable2At.lat, cable2At.lng], {
-            icon: footageIcon(tag2, "", tintHex(preset.color, 0.42), labelPlate),
+            icon: footageIcon(tag2, "", tintHex(preset.color, 0.42), labelPlate, true),
             interactive: false,
             keyboard: false,
             zIndexOffset: 390,

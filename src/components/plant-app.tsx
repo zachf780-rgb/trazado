@@ -1428,6 +1428,46 @@ function Inspector({ line, point, polygon, overlay }) {
 						confirm();
 					}
 				}
+			}), /* @__PURE__ */ jsx("p", {
+				className: "mt-3 text-xs text-muted-foreground",
+				children: "Outline"
+			}), /* @__PURE__ */ jsx("div", {
+				className: "mt-1 flex flex-wrap gap-1",
+				children: ["#e8eaee", "#facc15", "#fb923c", "#f87171", "#f472b6", "#38bdf8", "#4ade80", "#c084fc"].map((color) => /* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: "size-5 rounded-full border",
+					style: { background: color, borderColor: (polygon.stroke || "#a1a1aa") === color ? "#fff" : "transparent" },
+					"aria-label": `Outline ${color}`,
+					onClick: () => usePlantStore.getState().updatePolygon(polygon.id, { stroke: color })
+				}, color))
+			}), /* @__PURE__ */ jsx("div", {
+				className: "mt-1 flex flex-wrap gap-1",
+				children: [[0.25, "25%"], [0.5, "50%"], [0.75, "75%"], [1, "100%"]].map(([value, label]) => /* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", Math.abs((polygon.strokeOpacity ?? 1) - Number(value)) < 0.02 ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
+					onClick: () => usePlantStore.getState().updatePolygon(polygon.id, { strokeOpacity: Number(value) }),
+					children: label
+				}, `stroke-${label}`))
+			}), /* @__PURE__ */ jsx("p", {
+				className: "mt-2 text-xs text-muted-foreground",
+				children: "Fill"
+			}), /* @__PURE__ */ jsx("div", {
+				className: "mt-1 flex flex-wrap gap-1",
+				children: ["#e8eaee", "#facc15", "#fb923c", "#f87171", "#f472b6", "#38bdf8", "#4ade80", "#c084fc"].map((color) => /* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: "size-5 rounded-full border",
+					style: { background: color, borderColor: (polygon.fill || "#64748b") === color ? "#fff" : "transparent" },
+					"aria-label": `Fill ${color}`,
+					onClick: () => usePlantStore.getState().updatePolygon(polygon.id, { fill: color })
+				}, color))
+			}), /* @__PURE__ */ jsx("div", {
+				className: "mt-1 flex flex-wrap gap-1",
+				children: [[0.25, "25%"], [0.5, "50%"], [0.75, "75%"], [1, "100%"]].map(([value, label]) => /* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", Math.abs((polygon.fillOpacity ?? 0.25) - Number(value)) < 0.02 ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
+					onClick: () => usePlantStore.getState().updatePolygon(polygon.id, { fillOpacity: Number(value) }),
+					children: label
+				}, `fill-${label}`))
 			}), /* @__PURE__ */ jsx("textarea", {
 				className: cn(fieldClass, "mt-2 min-h-16 resize-y"),
 				placeholder: "Description",
@@ -1461,6 +1501,27 @@ function Inspector({ line, point, polygon, overlay }) {
 					onClick: () => usePlantStore.getState().updateOverlay(overlay.id, { opacity: Number(value) }),
 					children: label
 				}, label))
+			}), /* @__PURE__ */ jsx("p", {
+				className: "mt-3 text-xs text-muted-foreground",
+				children: "Rotate"
+			}), /* @__PURE__ */ jsxs("div", {
+				className: "mt-1 flex items-center gap-1",
+				children: [/* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: "inline-flex size-7 items-center justify-center rounded-[var(--radius-xs)] border border-border",
+					"aria-label": "Rotate overlay counterclockwise",
+					onClick: () => usePlantStore.getState().updateOverlay(overlay.id, { rotation: (((overlay.rotation || 0) - 15) % 360 + 360) % 360 }),
+					children: /* @__PURE__ */ jsx(ChevronLeft, { className: "size-4" })
+				}), /* @__PURE__ */ jsx("span", {
+					className: "w-12 text-center font-mono text-xs",
+					children: `${overlay.rotation || 0}°`
+				}), /* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: "inline-flex size-7 items-center justify-center rounded-[var(--radius-xs)] border border-border",
+					"aria-label": "Rotate overlay clockwise",
+					onClick: () => usePlantStore.getState().updateOverlay(overlay.id, { rotation: ((overlay.rotation || 0) + 15) % 360 }),
+					children: /* @__PURE__ */ jsx(ChevronRight, { className: "size-4" })
+				})]
 			}), /* @__PURE__ */ jsx("p", {
 				className: "mt-2 text-xs text-muted-foreground",
 				children: "Drag the image to move it. Corners resize it."

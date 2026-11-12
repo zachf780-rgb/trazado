@@ -20,6 +20,7 @@ import {
   isPointKind,
   joinsAtEnds,
   hexToKmlColor,
+  hexToRgb,
   kmlColorToHex,
   tintHex,
   nearestLineKind,
@@ -32,7 +33,7 @@ import {
   pedestalDir,
   vaultColor,
 } from "./presets";
-import { footageSpans, formatFeet, joinMask, parallelPath, offsetBeside, pathFootage, pathMidpoint, reportedFeet, spanShownFeet, squareLine2, pointSlashMarks, slashMarks, slotCableTag, spanLabel } from "./geo";
+import { footageSpans, formatFeet, joinMask, parallelPath, offsetBeside, pathFootage, pathMidpoint, reportedFeet, spanShownFeet, squareLine2, pointSlashMarks, slashMarks, slotCableTag, spanParts } from "./geo";
 import { blobToDataUrl, dataUrlToBytes, pedestalIconDataUrl, pointIconDataUrl, poleVariantDataUrl, vaultIconDataUrl } from "./icons";
 
 function coord(ll: LatLng): string {
@@ -351,35 +352,38 @@ function legendPng(lines: LineFeature[], points: PointFeature[]): string {
   return canvas.toDataURL("image/png");
 }
 
-function labelPlateDataUrl(text: string, color: string): string {
+function outlinedLabelDataUrl(text: string, color: string, plate: boolean, large: boolean): string {
   const drawn = text.split("\n").map((line) => line.trim()).filter(Boolean);
   const lines = drawn.length > 0 ? drawn : [text];
   if (typeof document === "undefined") return "";
-  const fontSize = 28;
-  const font = `600 ${fontSize}px "IBM Plex Mono", ui-monospace, monospace`;
+  const fontSize = large ? 40 : 32;
+  const font = `700 ${fontSize}px "IBM Plex Mono", ui-monospace, monospace`;
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   if (!ctx) return "";
   ctx.font = font;
   const width = Math.max(...lines.map((line) => ctx.measureText(line).width), 8);
-  const padX = 22;
-  const padY = 14;
+  const stroke = large ? 9 : 7;
+  const padX = stroke + 18;
+  const padY = stroke + 12;
   const lineH = Math.round(fontSize * 1.25);
   const w = Math.ceil(width + padX * 2);
   const h = Math.ceil(lines.length * lineH + padY * 2);
   canvas.width = w;
   canvas.height = h;
   ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.beginPath();
-  ctx.roundRect(2, 2, w - 4, h - 4, 10);
-  ctx.fill();
+  if (plate) {
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.beginPath();
+    ctx.roundRect(stroke, stroke, w - stroke * 2, h - stroke * 2, 10);
+    ctx.fill();
+  }
   ctx.font = font;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.lineJoin = "round";
   ctx.miterLimit = 2;
-  ctx.lineWidth = 10;
+  ctx.lineWidth = stroke;
   ctx.strokeStyle = "#ffffff";
   ctx.fillStyle = color;
   lines.forEach((line, index) => {
@@ -388,6 +392,13 @@ function labelPlateDataUrl(text: string, color: string): string {
     ctx.fillText(line, w / 2, y);
   });
   return canvas.toDataURL("image/png");
+}
+
+function kmlPaint(hex: string, opacity: number): string {
+  const { r, g, b } = hexToRgb(/^#[0-9a-f]{6}$/i.test(hex) ? hex : "#d4d4d8");
+  const alpha = Math.round(Math.min(1, Math.max(0, opacity)) * 255);
+  const part = (n: number) => n.toString(16).padStart(2, "0");
+  return `${part(alpha)}${part(b)}${part(g)}${part(r)}`;
 }
 
 export async function buildKmz(project: PlantProject, labelPlate = false): Promise<Blob> {
@@ -402,45 +413,27 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
   const pedFiles = new Map<string, string>();
   const vaultFiles = new Map<string, string>();
   const plateFiles = new Map<string, string>();
-  function plateHref(text: string, color: string): string {
-    const key = `${color}|${text}`;
+  function artHref(text: string, color: string, large: boolean): string {
+    const key = `${labelPlate ? "p" : "n"}|${large ? "l" : "s"}|${color}|${text}`;
     const hit = plateFiles.get(key);
     if (hit) return hit;
     const name = `label-${plateFiles.size + 1}.png`;
-    files!.file(name, dataUrlToBytes(labelPlateDataUrl(text, color)).bytes);
+    files!.file(name, dataUrlToBytes(outlinedLabelDataUrl(text, color, labelPlate, large)).bytes);
     const href = `files/${name}`;
     plateFiles.set(key, href);
     return href;
   }
-  function textMark(text: string, at: LatLng, kmlColor: string, hex: string): string {
-    if (labelPlate) {
-      return `      <Placemark>
+  function textMark(text: string, at: LatLng, _kmlColor: string, hex: string, large = false): string {
+    return `      <Placemark>
         <name></name>
         <ExtendedData><Data name="spanLabel"><value>1</value></Data></ExtendedData>
         <Style>
           <IconStyle>
-            <scale>0.5</scale>
+            <scale>${large ? 0.4 : 0.46}</scale>
             <hotSpot x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
-            <Icon><href>${escapeXml(plateHref(text, hex))}</href></Icon>
+            <Icon><href>${escapeXml(artHref(text, hex, large))}</href></Icon>
           </IconStyle>
           <LabelStyle><scale>0</scale></LabelStyle>
-        </Style>
-        <Point>
-          <altitudeMode>clampToGround</altitudeMode>
-          <coordinates>${coord(at)}</coordinates>
-        </Point>
-      </Placemark>`;
-    }
-    return `      <Placemark>
-        <name>${escapeXml(text)}</name>
-        <ExtendedData><Data name="spanLabel"><value>1</value></Data></ExtendedData>
-        <Style>
-          <IconStyle><scale>0</scale></IconStyle>
-          <LabelStyle>
-            <color>${kmlColor}</color>
-            <colorMode>normal</colorMode>
-            <scale>0.6</scale>
-          </LabelStyle>
         </Style>
         <Point>
           <altitudeMode>clampToGround</altitudeMode>
@@ -602,15 +595,23 @@ ${slashXml(slashMarks(path))}`;
         const spans = footageSpans(line.path, gear);
         const labels = line.kind === "road" ? "" : spans
           .map((span) => {
-            const footage = textMark(spanLabel(spanShownFeet(span.feet, measured, shown), line), span.labelAt, labelColor, preset?.color ?? "#d4d4d8");
-            if (!line.parallel) return footage;
-            const cableMark = (name: string, at: LatLng, kmlColor: string, hex: string) =>
-              name ? textMark(name, at, kmlColor, hex) : "";
+            const shownFeet = spanShownFeet(span.feet, measured, shown);
+            const parts = spanParts(shownFeet, line);
+            const hex = preset?.color ?? "#d4d4d8";
+            const twinHex = tintHex(hex, 0.42);
+            const footage = textMark(parts.footage, span.labelAt, labelColor, hex);
+            if (!line.parallel) {
+              return parts.detail
+                ? [footage, textMark(parts.detail, offsetBeside(span.labelAt, span.from, span.to, 14, 1), labelColor, hex, true)].join("\n")
+                : footage;
+            }
+            const cableMark = (name: string, at: LatLng, kmlColor: string, paint: string) =>
+              name ? textMark(name, at, kmlColor, paint, true) : "";
             const footageAt = offsetBeside(span.labelAt, span.from, span.to, 4, -1);
             return [
               footage.replace(coord(span.labelAt), coord(footageAt)),
-              cableMark(slotCableTag(line, 1), offsetBeside(span.cableAt, span.from, span.to, 4, -1), centerColor, preset?.color ?? "#d4d4d8"),
-              cableMark(slotCableTag(line, 2), offsetBeside(span.cableAt2, span.from, span.to, 12, 1), offsetColor, tintHex(preset?.color ?? "#d4d4d8", 0.42)),
+              cableMark(slotCableTag(line, 1), offsetBeside(span.cableAt, span.from, span.to, 4, -1), centerColor, hex),
+              cableMark(slotCableTag(line, 2), offsetBeside(span.cableAt2, span.from, span.to, 12, 1), offsetColor, twinHex),
             ]
               .filter(Boolean)
               .join("\n");
@@ -675,16 +676,7 @@ ${slashXml(slashMarks(path))}`;
           ? (() => {
               const mid = pathMidpoint(line.path);
               if (!mid) return "";
-              if (labelPlate) return textMark(visibleLine, mid, "ffe4e4e7", "#e4e4e7");
-              return `      <Placemark>
-        <name>${escapeXml(visibleLine)}</name>
-        <ExtendedData><Data name="roadLabel"><value>1</value></Data></ExtendedData>
-        <Style>
-          <IconStyle><scale>0</scale></IconStyle>
-          <LabelStyle><color>ffe4e4e7</color><colorMode>normal</colorMode><scale>0.6</scale></LabelStyle>
-        </Style>
-        <Point><altitudeMode>clampToGround</altitudeMode><coordinates>${coord(mid)}</coordinates></Point>
-      </Placemark>`;
+              return textMark(visibleLine, mid, "ffe4e4e7", "#e4e4e7");
             })()
           : "";
         return `      <Placemark>
@@ -784,10 +776,33 @@ ${inner}
 ${project.polygons
   .map((poly) => {
     const ring = [...poly.path, poly.path[0]].filter(Boolean) as LatLng[];
+    const lat = poly.path.reduce((sum, point) => sum + point.lat, 0) / poly.path.length;
+    const lng = poly.path.reduce((sum, point) => sum + point.lng, 0) / poly.path.length;
+    const label = poly.name.trim()
+      ? `      <Placemark>
+        <name>${escapeXml(poly.name.trim())}</name>
+        <ExtendedData><Data name="polyLabel"><value>1</value></Data></ExtendedData>
+        <Style>
+          <IconStyle><scale>0</scale></IconStyle>
+          <LabelStyle><color>ffffffff</color><colorMode>normal</colorMode><scale>0.8</scale></LabelStyle>
+        </Style>
+        <Point><altitudeMode>clampToGround</altitudeMode><coordinates>${coord({ lat, lng })}</coordinates></Point>
+      </Placemark>`
+      : "";
     return `      <Placemark>
         <name>${escapeXml(poly.name)}</name>
         ${kmlDescription(poly.description)}
-        <styleUrl>#poly</styleUrl>
+        <ExtendedData>
+          <Data name="stroke"><value>${escapeXml(poly.stroke || "#a1a1aa")}</value></Data>
+          <Data name="fill"><value>${escapeXml(poly.fill || "#64748b")}</value></Data>
+          <Data name="strokeOpacity"><value>${poly.strokeOpacity ?? 1}</value></Data>
+          <Data name="fillOpacity"><value>${poly.fillOpacity ?? 0.25}</value></Data>
+        </ExtendedData>
+        <Style>
+          <LineStyle><color>${kmlPaint(poly.stroke || "#a1a1aa", poly.strokeOpacity ?? 1)}</color><width>2</width></LineStyle>
+          <PolyStyle><color>${kmlPaint(poly.fill || "#64748b", poly.fillOpacity ?? 0.25)}</color></PolyStyle>
+          <LabelStyle><scale>0</scale></LabelStyle>
+        </Style>
         <Polygon>
           <tessellate>1</tessellate>
           <outerBoundaryIs>
@@ -796,7 +811,8 @@ ${project.polygons
             </LinearRing>
           </outerBoundaryIs>
         </Polygon>
-      </Placemark>`;
+      </Placemark>
+${label}`;
   })
   .join("\n")}
     </Folder>`;
@@ -820,6 +836,7 @@ ${project.overlays
           <south>${ov.south}</south>
           <east>${ov.east}</east>
           <west>${ov.west}</west>
+          <rotation>${-((ov.rotation || 0) % 360)}</rotation>
         </LatLonBox>
       </GroundOverlay>`,
   )
@@ -1064,7 +1081,7 @@ export async function parsePlantFile(file: File): Promise<
 
   for (const pm of Array.from(doc.getElementsByTagName("Placemark"))) {
     const name = textContent(pm.getElementsByTagName("name")[0]);
-    if (name === "__riser" || name === "__anchor" || name === "__remove" || dataValue(pm, "roadLabel") === "1" || dataValue(pm, "spanLabel") === "1") continue;
+    if (name === "__riser" || name === "__anchor" || name === "__remove" || dataValue(pm, "roadLabel") === "1" || dataValue(pm, "spanLabel") === "1" || dataValue(pm, "polyLabel") === "1") continue;
     const notes = textContent(pm.getElementsByTagName("description")[0]);
     const styleUrl = textContent(pm.getElementsByTagName("styleUrl")[0]);
     const lineEl = pm.getElementsByTagName("LineString")[0];
@@ -1125,11 +1142,19 @@ export async function parsePlantFile(file: File): Promise<
           path[0].lng === path[path.length - 1]!.lng
             ? path.slice(0, -1)
             : path;
+        const stroke = dataValue(pm, "stroke");
+        const fill = dataValue(pm, "fill");
+        const strokeOpacity = Number(dataValue(pm, "strokeOpacity"));
+        const fillOpacity = Number(dataValue(pm, "fillOpacity"));
         polygons.push({
           id: crypto.randomUUID(),
           path: closed,
           name: name || "Polygon",
           description: notes,
+          stroke: /^#[0-9a-f]{6}$/i.test(stroke) ? stroke : "#a1a1aa",
+          fill: /^#[0-9a-f]{6}$/i.test(fill) ? fill : "#64748b",
+          strokeOpacity: Number.isFinite(strokeOpacity) ? strokeOpacity : 1,
+          fillOpacity: Number.isFinite(fillOpacity) ? fillOpacity : 0.25,
         });
       }
       continue;
@@ -1141,7 +1166,7 @@ export async function parsePlantFile(file: File): Promise<
       const storedKind = dataValue(pm, "kind");
       const equipment = isEquipmentMark(styleUrl, icon, storedKind);
       const scale = inline.scale ?? styleScale.get(styleUrl) ?? 1;
-      if (!equipment && (scale === 0 || icon.includes("label-") || isFootageName(name))) continue;
+      if (!equipment && (scale === 0 || icon.includes("label-") || icon.includes("glow-") || isFootageName(name))) continue;
       const path = parseCoordinates(
         textContent(pointEl.getElementsByTagName("coordinates")[0]),
       );
@@ -1202,6 +1227,8 @@ export async function parsePlantFile(file: File): Promise<
     if (!dataUrl) continue;
     const color = textContent(ov.getElementsByTagName("color")[0]);
     const alpha = /^[0-9a-f]{8}$/i.test(color) ? parseInt(color.slice(0, 2), 16) / 255 : 1;
+    const rotationRaw = Number(textContent(box.getElementsByTagName("rotation")[0] ?? null));
+    const rotation = Number.isFinite(rotationRaw) ? ((Math.round(-rotationRaw) % 360) + 360) % 360 : 0;
     overlays.push({
       id: crypto.randomUUID(),
       name,
@@ -1212,6 +1239,7 @@ export async function parsePlantFile(file: File): Promise<
       east,
       west,
       opacity: Number.isFinite(alpha) ? alpha : 1,
+      rotation,
     });
   }
 

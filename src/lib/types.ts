@@ -83,6 +83,10 @@ export interface PolygonFeature {
   path: LatLng[];
   name: string;
   description: string;
+  stroke: string;
+  fill: string;
+  strokeOpacity: number;
+  fillOpacity: number;
 }
 
 export interface OverlayFeature {
@@ -95,6 +99,7 @@ export interface OverlayFeature {
   north: number;
   east: number;
   opacity: number;
+  rotation: number;
 }
 
 export interface MapViewState {

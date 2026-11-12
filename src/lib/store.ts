@@ -77,7 +77,7 @@ interface PlantState extends PlantProject {
   updatePoint: (id: string, patch: Partial<Pick<PointFeature, "name" | "description" | "labelSide" | "riser" | "anchors" | "remove" | "hideLegend" | "pedType" | "pedRotate" | "vaultType" | "size">>) => void;
   updatePolygon: (
     id: string,
-    patch: Partial<Pick<PolygonFeature, "name" | "description">>,
+    patch: Partial<Pick<PolygonFeature, "name" | "description" | "stroke" | "fill" | "strokeOpacity" | "fillOpacity">>,
   ) => void;
   updateOverlay: (id: string, patch: Partial<OverlayFeature>) => void;
   deleteSelection: () => void;
@@ -182,6 +182,12 @@ function readAnchors(point: {
   return dirs.slice(0, 3);
 }
 
+function clampOpacity(value: unknown, fallback: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(1, Math.max(0, n));
+}
+
 function isLatLng(value: unknown): value is LatLng {
   if (!value || typeof value !== "object") return false;
   const v = value as LatLng;
@@ -254,6 +260,10 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
       path,
       name: typeof poly.name === "string" ? poly.name : "Polygon",
       description: typeof poly.description === "string" ? poly.description : "",
+      stroke: /^#[0-9a-f]{6}$/i.test(poly.stroke ?? "") ? poly.stroke : "#a1a1aa",
+      fill: /^#[0-9a-f]{6}$/i.test(poly.fill ?? "") ? poly.fill : "#64748b",
+      strokeOpacity: clampOpacity(poly.strokeOpacity, 1),
+      fillOpacity: clampOpacity(poly.fillOpacity, 0.25),
     });
   }
   const overlays: OverlayFeature[] = [];
@@ -270,6 +280,7 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
       north: ov.north,
       east: ov.east,
       opacity: Number.isFinite(ov.opacity) ? ov.opacity : 0.85,
+      rotation: Number.isFinite(ov.rotation) ? ((Math.round(ov.rotation) % 360) + 360) % 360 : 0,
     });
   }
   const view = raw.view;
@@ -408,6 +419,7 @@ export const usePlantStore = create<PlantState>()(
             dataUrl: s.draft.dataUrl,
             ...box,
             opacity: 1,
+            rotation: 0,
           };
           set({
             ...commit(s, { overlays: [...s.overlays, overlay] }),
@@ -506,6 +518,10 @@ export const usePlantStore = create<PlantState>()(
             path,
             name: `Polygon ${s.polygons.length + 1}`,
             description: "",
+            stroke: "#a1a1aa",
+            fill: "#64748b",
+            strokeOpacity: 1,
+            fillOpacity: 0.25,
           };
           set({
             ...commit(s, { polygons: [...s.polygons, polygon] }),

@@ -168,13 +168,9 @@
   text-align: center;
   font-family: var(--font-mono);
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.01em;
   line-height: 1.15;
-  text-shadow:
-    0 1px 2px #0a0b0d,
-    0 0 6px #0a0b0d,
-    0 0 1px #0a0b0d;
   white-space: nowrap;
   pointer-events: none;
 }
@@ -184,26 +180,29 @@
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.9);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.95);
-  text-shadow:
-    -1.5px -1.5px 0 #fff,
-    1.5px -1.5px 0 #fff,
-    -1.5px 1.5px 0 #fff,
-    1.5px 1.5px 0 #fff,
-    0 -1.5px 0 #fff,
-    0 1.5px 0 #fff,
-    -1.5px 0 0 #fff,
-    1.5px 0 0 #fff;
+}
+
+.footage-label.glow .footage-stack {
+  font-size: 13px;
 }
 
 .footage-label .footage-feet,
 .footage-label .footage-detail {
   display: block;
+  -webkit-text-stroke: 3px #fff;
+  paint-order: stroke fill;
+}
+
+.footage-label .footage-detail,
+.footage-label.glow .footage-feet,
+.footage-label.glow .footage-detail {
+  font-size: 12px;
+  font-weight: 700;
+  -webkit-text-stroke: 3.5px #fff;
 }
 
 .footage-label .footage-detail {
   margin-top: 1px;
-  font-size: 8px;
-  font-weight: 500;
 }
 
 .leaflet-tooltip.object-label {
