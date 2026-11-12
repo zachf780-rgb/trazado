@@ -182,8 +182,26 @@
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.95);
 }
 
-.footage-label.glow .footage-stack {
-  font-size: 13px;
+.footage-label.size-sm .footage-stack {
+  font-size: 8px;
+}
+
+.footage-label.size-lg .footage-stack {
+  font-size: 14px;
+}
+
+.footage-label.size-sm .footage-detail,
+.footage-label.size-sm.glow .footage-feet,
+.footage-label.size-sm.glow .footage-detail {
+  font-size: 9px;
+  -webkit-text-stroke: 2.2px #fff;
+}
+
+.footage-label.size-lg .footage-detail,
+.footage-label.size-lg.glow .footage-feet,
+.footage-label.size-lg.glow .footage-detail {
+  font-size: 16px;
+  -webkit-text-stroke: 4px #fff;
 }
 
 .footage-label .footage-feet,

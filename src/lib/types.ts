@@ -36,6 +36,8 @@ export function isCableType(value: unknown): value is CableType {
   return typeof value === "string" && (CABLE_IDS as readonly string[]).includes(value);
 }
 
+export type LabelSize = "sm" | "md" | "lg";
+
 export interface LineFeature {
   id: string;
   kind: LineKind;
@@ -56,6 +58,7 @@ export interface LineFeature {
   footageText: string;
   hideLegend: boolean;
   hideFootage: boolean;
+  labelSize: LabelSize;
   name: string;
 }
 

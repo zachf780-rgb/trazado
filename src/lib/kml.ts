@@ -3,6 +3,7 @@ import type {
   LatLng,
   LineFeature,
   LineKind,
+  LabelSize,
   OverlayFeature,
   PlantProject,
   PointFeature,
@@ -394,6 +395,12 @@ function outlinedLabelDataUrl(text: string, color: string, plate: boolean, large
   return canvas.toDataURL("image/png");
 }
 
+function labelIconScale(size: LabelSize, large: boolean): number {
+  if (size === "lg") return large ? 2.1 : 2.4;
+  if (size === "sm") return large ? 1.15 : 1.3;
+  return large ? 1.55 : 1.75;
+}
+
 function kmlPaint(hex: string, opacity: number): string {
   const { r, g, b } = hexToRgb(/^#[0-9a-f]{6}$/i.test(hex) ? hex : "#d4d4d8");
   const alpha = Math.round(Math.min(1, Math.max(0, opacity)) * 255);
@@ -423,13 +430,13 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
     plateFiles.set(key, href);
     return href;
   }
-  function textMark(text: string, at: LatLng, _kmlColor: string, hex: string, large = false): string {
+  function textMark(text: string, at: LatLng, _kmlColor: string, hex: string, large = false, size: LabelSize = "md"): string {
     return `      <Placemark>
         <name></name>
         <ExtendedData><Data name="spanLabel"><value>1</value></Data></ExtendedData>
         <Style>
           <IconStyle>
-            <scale>${large ? 2.1 : 2.4}</scale>
+            <scale>${labelIconScale(size, large)}</scale>
             <hotSpot x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
             <Icon><href>${escapeXml(artHref(text, hex, large))}</href></Icon>
           </IconStyle>
@@ -599,14 +606,15 @@ ${slashXml(slashMarks(path))}`;
             const parts = spanParts(shownFeet, line);
             const hex = preset?.color ?? "#d4d4d8";
             const twinHex = tintHex(hex, 0.42);
-            const footage = textMark(parts.footage, span.labelAt, labelColor, hex);
+            const size = line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
+            const footage = textMark(parts.footage, span.labelAt, labelColor, hex, false, size);
             if (!line.parallel) {
               return parts.detail
-                ? [footage, textMark(parts.detail, offsetBeside(span.labelAt, span.from, span.to, 14, 1), labelColor, hex, true)].join("\n")
+                ? [footage, textMark(parts.detail, offsetBeside(span.labelAt, span.from, span.to, 14, 1), labelColor, hex, true, size)].join("\n")
                 : footage;
             }
             const cableMark = (name: string, at: LatLng, kmlColor: string, paint: string) =>
-              name ? textMark(name, at, kmlColor, paint, true) : "";
+              name ? textMark(name, at, kmlColor, paint, true, size) : "";
             const footageAt = offsetBeside(span.labelAt, span.from, span.to, 4, -1);
             return [
               footage.replace(coord(span.labelAt), coord(footageAt)),
@@ -658,6 +666,7 @@ ${slashXml(slashMarks(path))}`;
           line.footageText ? `<Data name="footageText"><value>${escapeXml(line.footageText)}</value></Data>` : "",
           line.hideLegend ? `<Data name="hideLegend"><value>1</value></Data>` : "",
           line.hideFootage ? `<Data name="hideFootage"><value>1</value></Data>` : "",
+          line.labelSize && line.labelSize !== "md" ? `<Data name="labelSize"><value>${line.labelSize}</value></Data>` : "",
           `<Data name="kind"><value>${line.kind}</value></Data>`,
           line.name.trim() ? `<Data name="lineName"><value>${escapeXml(line.name.trim())}</value></Data>` : "",
         ]
@@ -676,7 +685,7 @@ ${slashXml(slashMarks(path))}`;
           ? (() => {
               const mid = pathMidpoint(line.path);
               if (!mid) return "";
-              return textMark(visibleLine, mid, "ffe4e4e7", "#e4e4e7");
+              return textMark(visibleLine, mid, "ffe4e4e7", "#e4e4e7", false, line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md");
             })()
           : "";
         return `      <Placemark>
@@ -1104,6 +1113,7 @@ export async function parsePlantFile(file: File): Promise<
         if (isCableType(value) || value === "empty") return value;
         return "";
       };
+      const storedSize = dataValue(pm, "labelSize");
       lines.push({
         id: crypto.randomUUID(),
         kind: isLineKind(kind) ? kind : "line",
@@ -1124,6 +1134,7 @@ export async function parsePlantFile(file: File): Promise<
         footageText: dataValue(pm, "footageText"),
         hideLegend: dataValue(pm, "hideLegend") === "1",
         hideFootage: dataValue(pm, "hideFootage") === "1",
+        labelSize: storedSize === "sm" || storedSize === "lg" ? storedSize : "md",
         name: dataValue(pm, "lineName") || (kind === "road" ? name : ""),
       });
       continue;

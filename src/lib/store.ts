@@ -4,6 +4,7 @@ import type {
   Draft,
   LatLng,
   LineFeature,
+  LabelSize,
   OverlayFeature,
   PlantProject,
   PointFeature,
@@ -45,6 +46,8 @@ interface PlantState extends PlantProject {
   setPlaceSmall: (placeSmall: boolean) => void;
   labelPlate: boolean;
   setLabelPlate: (labelPlate: boolean) => void;
+  labelSize: LabelSize;
+  setLabelSize: (labelSize: LabelSize) => void;
   past: Snapshot[];
   future: Snapshot[];
   setTool: (tool: Tool) => void;
@@ -71,7 +74,7 @@ interface PlantState extends PlantProject {
   updateLine: (
     id: string,
     patch: Partial<
-      Pick<LineFeature, "notes" | "name" | "parallel" | "joinEnds" | "intoSlot" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "emptyPipe" | "remove" | "fiberUnit" | "overrideFootage" | "footageText" | "hideLegend" | "hideFootage">
+      Pick<LineFeature, "notes" | "name" | "parallel" | "joinEnds" | "intoSlot" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "emptyPipe" | "remove" | "fiberUnit" | "overrideFootage" | "footageText" | "hideLegend" | "hideFootage" | "labelSize">
     >,
   ) => void;
   updatePoint: (id: string, patch: Partial<Pick<PointFeature, "name" | "description" | "labelSide" | "riser" | "anchors" | "remove" | "hideLegend" | "pedType" | "pedRotate" | "vaultType" | "size">>) => void;
@@ -188,6 +191,10 @@ function clampOpacity(value: unknown, fallback: number): number {
   return Math.min(1, Math.max(0, n));
 }
 
+function isLabelSize(value: unknown): value is LabelSize {
+  return value === "sm" || value === "md" || value === "lg";
+}
+
 function isLatLng(value: unknown): value is LatLng {
   if (!value || typeof value !== "object") return false;
   const v = value as LatLng;
@@ -216,6 +223,7 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
       footageText: typeof line.footageText === "string" ? line.footageText : "",
       hideLegend: line.hideLegend === true,
       hideFootage: line.hideFootage === true,
+      labelSize: isLabelSize(line.labelSize) ? line.labelSize : "md",
       name: typeof line.name === "string" ? line.name : "",
     }));
   }
@@ -317,6 +325,7 @@ export const usePlantStore = create<PlantState>()(
       snapAsk: null,
       placeSmall: false,
       labelPlate: false,
+      labelSize: "md",
       past: [],
       future: [],
 
@@ -355,6 +364,7 @@ export const usePlantStore = create<PlantState>()(
       dismissSnap: () => set({ snapAsk: null }),
       setPlaceSmall: (placeSmall) => set({ placeSmall }),
       setLabelPlate: (labelPlate) => set({ labelPlate }),
+      setLabelSize: (labelSize) => set({ labelSize }),
       select: (selection) => set({ selection, tool: "select", draft: null }),
       clearSelection: () => set({ selection: null }),
 
@@ -499,6 +509,7 @@ export const usePlantStore = create<PlantState>()(
             footageText: "",
             hideLegend: false,
             hideFootage: false,
+            labelSize: isLabelSize(s.labelSize) ? s.labelSize : "md",
             name: "",
           });
           set({
@@ -693,6 +704,7 @@ export const usePlantStore = create<PlantState>()(
         overlays: s.overlays,
         view: s.view,
         labelPlate: s.labelPlate,
+        labelSize: s.labelSize,
       }),
     },
   ),

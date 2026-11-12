@@ -42,11 +42,11 @@ const SAT_LABELS = L.tileLayer(
   { maxZoom: 23, maxNativeZoom: 19, attribution: "" },
 );
 
-function footageIcon(footage: string, detail: string, color: string, plate = false, glow = false): L.DivIcon {
+function footageIcon(footage: string, detail: string, color: string, plate = false, glow = false, size: "sm" | "md" | "lg" = "md"): L.DivIcon {
   const extra = detail
     ? `<span class="footage-detail">${escapeHtml(detail)}</span>`
     : "";
-  const classes = ["footage-label", plate ? "plate" : "", glow ? "glow" : ""].filter(Boolean).join(" ");
+  const classes = ["footage-label", plate ? "plate" : "", glow ? "glow" : "", size === "md" ? "" : `size-${size}`].filter(Boolean).join(" ");
   return L.divIcon({
     className: classes,
     html: `<span class="footage-stack" style="color:${color}"><span class="footage-feet">${escapeHtml(footage)}</span>${extra}</span>`,
@@ -812,7 +812,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
           const mid = pathMidpoint(line.path);
           if (mid) {
             L.marker([mid.lat, mid.lng], {
-              icon: footageIcon(line.remove ? `remove ${roadName}` : roadName, "", "#e4e4e7", labelPlate),
+              icon: footageIcon(line.remove ? `remove ${roadName}` : roadName, "", "#e4e4e7", labelPlate, false, line.labelSize || "md"),
               interactive: false,
               keyboard: false,
               zIndexOffset: 400,
@@ -829,7 +829,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         const cable1At = offsetBeside(span.cableAt, span.from, span.to, offsetFt * 0.35, -1);
         const cable2At = offsetBeside(span.cableAt2, span.from, span.to, offsetFt, 1);
         L.marker([line1At.lat, line1At.lng], {
-          icon: footageIcon(parts.footage, parts.detail, preset.color, labelPlate),
+          icon: footageIcon(parts.footage, parts.detail, preset.color, labelPlate, false, line.labelSize || "md"),
           interactive: false,
           keyboard: false,
           zIndexOffset: 400,
@@ -839,7 +839,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         const tag2 = slotCableTag(line, 2);
         if (tag1) {
           L.marker([cable1At.lat, cable1At.lng], {
-            icon: footageIcon(tag1, "", preset.color, labelPlate, true),
+            icon: footageIcon(tag1, "", preset.color, labelPlate, true, line.labelSize || "md"),
             interactive: false,
             keyboard: false,
             zIndexOffset: 390,
@@ -847,7 +847,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         }
         if (tag2) {
           L.marker([cable2At.lat, cable2At.lng], {
-            icon: footageIcon(tag2, "", tintHex(preset.color, 0.42), labelPlate, true),
+            icon: footageIcon(tag2, "", tintHex(preset.color, 0.42), labelPlate, true, line.labelSize || "md"),
             interactive: false,
             keyboard: false,
             zIndexOffset: 390,
