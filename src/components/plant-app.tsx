@@ -54,11 +54,13 @@ import {
   POINT_PRESETS,
   ROAD_PRESET,
   allowsEmpty,
+  alignPipeRoles,
   cableChoices,
   canResize,
   isLineTool,
   joinsAtEnds,
   linePreset,
+  pipeAccount,
   plantTotals,
   pedestalColor,
   pedestalDir,
@@ -684,7 +686,7 @@ export function PlantApp() {
 				legendOpen ? /* @__PURE__ */ jsxs("aside", {
 					className: "absolute right-2 bottom-[7.75rem] z-20 max-h-[calc(100dvh-16rem)] w-52 overflow-y-auto rounded-[var(--radius-md)] border border-border bg-elevated/95 px-2 py-1.5 md:right-4 md:bottom-4 md:max-h-[calc(100dvh-6rem)]",
 					children: [
-						totals.usedLines.length > 0 || totals.removeLines.length > 0 ? /* @__PURE__ */ jsxs("ul", {
+						totals.usedLines.length > 0 || totals.removeLines.length > 0 || totals.addPipe > 0 || totals.pullOccupied > 0 ? /* @__PURE__ */ jsxs("ul", {
 							className: "space-y-1",
 							children: [totals.usedLines.map((preset) => /* @__PURE__ */ jsxs("li", {
 								className: "flex items-baseline justify-between gap-2",
@@ -715,6 +717,21 @@ export function PlantApp() {
 								}), /* @__PURE__ */ jsx("span", {
 									className: "font-mono text-xs tabular-nums text-muted-foreground",
 									children: formatFeet(totals.addPipe)
+								})]
+							}) : null, totals.pullOccupied > 0 ? /* @__PURE__ */ jsxs("li", {
+								className: "flex items-baseline justify-between gap-2",
+								children: [/* @__PURE__ */ jsxs("span", {
+									className: "flex min-w-0 items-center gap-1.5 text-xs",
+									children: [/* @__PURE__ */ jsx("span", {
+										className: "inline-block h-0.5 w-3.5 shrink-0 rounded-full",
+										style: { background: linePreset("ug-pull").color }
+									}), /* @__PURE__ */ jsx("span", {
+										className: "truncate",
+										children: "Pull occupied"
+									})]
+								}), /* @__PURE__ */ jsx("span", {
+									className: "font-mono text-xs tabular-nums text-muted-foreground",
+									children: formatFeet(totals.pullOccupied)
 								})]
 							}) : null, totals.removeLines.map((preset) => /* @__PURE__ */ jsxs("li", {
 								className: "flex items-baseline justify-between gap-2",
@@ -1245,16 +1262,28 @@ function Inspector({ line, point, polygon, overlay }) {
 						}),
 						cableChoices(line.kind).map((choice) => {
 							const count = line.cables.filter((id) => id === choice.id).length;
+							const cap = line.kind === "drop" ? 12 : 4;
 							return /* @__PURE__ */ jsx("button", {
 								type: "button",
 								className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", count > 0 ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
 								onClick: () => {
-									const nextCount = count >= 4 ? 0 : count + 1;
-									const cables = cableChoices(line.kind).flatMap((item) => {
-										const n = item.id === choice.id ? nextCount : line.cables.filter((id) => id === item.id).length;
-										return Array.from({ length: n }, () => item.id);
+									const cables = line.kind === "drop"
+										? count > 0
+											? count >= cap ? [] : Array.from({ length: count + 1 }, () => choice.id)
+											: [choice.id]
+										: cableChoices(line.kind).flatMap((item) => {
+											const n = item.id === choice.id ? (count >= cap ? 0 : count + 1) : line.cables.filter((id) => id === item.id).length;
+											return Array.from({ length: n }, () => item.id);
+										});
+									const kept = new Map<string, ("ug" | "width" | "share")[]>();
+									line.cables.forEach((id, index) => {
+										const list = kept.get(id) ?? [];
+										const role = line.pipeRoles?.[index];
+										list.push(role === "ug" || role === "width" || role === "share" ? role : index === 0 ? "ug" : "share");
+										kept.set(id, list);
 									});
-									usePlantStore.getState().updateLine(line.id, { cables });
+									const pipeRoles = cables.map((id, index) => kept.get(id)?.shift() ?? (index === 0 ? "ug" : "share"));
+									usePlantStore.getState().updateLine(line.id, { cables, pipeRoles });
 								},
 								children: count > 1 ? `${choice.label} ×${count}` : choice.label
 							}, choice.id);
@@ -1269,7 +1298,57 @@ function Inspector({ line, point, polygon, overlay }) {
 				}),
 				line.kind !== "road" && !line.parallel ? /* @__PURE__ */ jsx("p", {
 					className: "mt-1 text-[10px] leading-tight text-muted-foreground",
-					children: "Tap a cable again to add another, up to 4."
+					children: line.kind === "drop" ? "One cable type. Tap again to add, up to 12." : "Tap a cable again to add another, up to 4."
+				}) : null,
+				!line.parallel && pipeAccount(line.kind) && line.cables.length > 1 ? /* @__PURE__ */ jsx("div", {
+					className: "mt-2 space-y-1",
+					children: alignPipeRoles(line.cables, line.pipeRoles).map((role, index) => {
+						const id = line.cables[index];
+						const base = cableChoices(line.kind).find((choice) => choice.id === id)?.label ?? "";
+						const name = id === "fiber" && line.fiberCount ? `${line.fiberCount}ct` : base;
+						const bore = linePreset(line.kind).short;
+						return /* @__PURE__ */ jsxs("div", {
+							className: "flex items-center gap-1",
+							children: [
+								/* @__PURE__ */ jsx("span", {
+									className: "w-3 text-[10px] text-muted-foreground",
+									children: String.fromCharCode(65 + index)
+								}),
+								/* @__PURE__ */ jsx("span", {
+									className: "w-10 truncate text-[10px]",
+									children: name
+								}),
+								[["ug", bore], ["width", "+W"], ["share", "Share"]].map(([value, label]) => /* @__PURE__ */ jsx("button", {
+									type: "button",
+									className: cn("rounded-[var(--radius-xs)] border px-1 py-0.5 text-[10px]", role === value ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
+									onClick: () => {
+										const next = value === "width" || value === "share" ? value : "ug";
+										const pipeRoles = alignPipeRoles(line.cables, line.pipeRoles).map((item, i) => i === index ? next : item);
+										usePlantStore.getState().updateLine(line.id, { pipeRoles });
+									},
+									children: label
+								}, value))
+							]
+						}, `${id}-${index}`);
+					})
+				}) : null,
+				line.kind === "ug-pull" && !line.parallel && line.cables.length > 1 ? /* @__PURE__ */ jsxs("label", {
+					className: "mt-2 flex items-center gap-2 text-xs",
+					children: [/* @__PURE__ */ jsx("input", {
+						type: "checkbox",
+						className: "size-3.5 accent-white",
+						checked: line.occupied === true,
+						onChange: (e) => usePlantStore.getState().updateLine(line.id, { occupied: e.target.checked })
+					}), "Occupied"]
+				}) : null,
+				line.kind === "in-4" || line.kind === "in-2" || line.kind === "in-075" ? /* @__PURE__ */ jsxs("label", {
+					className: "mt-2 flex items-center gap-2 text-xs",
+					children: [/* @__PURE__ */ jsx("input", {
+						type: "checkbox",
+						className: "size-3.5 accent-white",
+						checked: line.hideSpan === true,
+						onChange: (e) => usePlantStore.getState().updateLine(line.id, { hideSpan: e.target.checked })
+					}), "Span off legend"]
 				}) : null,
 				!line.parallel && line.cables.includes("fiber") ? /* @__PURE__ */ jsxs("label", {
 					className: "mt-2 flex items-center gap-2 text-xs",

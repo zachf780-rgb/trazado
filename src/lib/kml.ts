@@ -131,23 +131,24 @@ function drawGlyph(
 }
 
 function legendPng(lines: LineFeature[], points: PointFeature[]): string {
-  const { footage, removeFootage, counts, usedLines, removeLines, usedPoints, addPipe, cables, risers, anchors, peds, vaults } = plantTotals(
+  const { footage, removeFootage, counts, usedLines, removeLines, usedPoints, addPipe, pullOccupied, cables, risers, anchors, peds, vaults } = plantTotals(
     lines,
     points,
   );
   const pointRows = usedPoints.length + peds.length + vaults.length + (risers > 0 ? 1 : 0) + (anchors > 0 ? 1 : 0);
-  if (usedLines.length === 0 && removeLines.length === 0 && pointRows === 0) return "";
+  if (usedLines.length === 0 && removeLines.length === 0 && pointRows === 0 && cables.length === 0 && addPipe === 0 && pullOccupied === 0) return "";
 
   const w = 260;
   const rowH = 20;
   const pad = 12;
   const titleH = 20;
   const pipeRow = addPipe > 0 ? 1 : 0;
+  const occupiedRow = pullOccupied > 0 ? 1 : 0;
   const gap = usedLines.length > 0 && pointRows > 0 ? 8 : 0;
   const h =
     pad * 2 +
     titleH +
-    (usedLines.length + removeLines.length + pipeRow + cables.length) * rowH +
+    (usedLines.length + removeLines.length + pipeRow + occupiedRow + cables.length) * rowH +
     gap +
     pointRows * 18;
   const canvas = document.createElement("canvas");
@@ -190,6 +191,19 @@ function legendPng(lines: LineFeature[], points: PointFeature[]): string {
     ctx.textAlign = "right";
     ctx.fillStyle = "#c8ccd4";
     ctx.fillText(formatFeet(addPipe), w - pad, y);
+    ctx.textAlign = "left";
+    y += rowH;
+  }
+
+  if (pullOccupied > 0) {
+    ctx.fillStyle = "#2563eb";
+    ctx.fillRect(pad, y - 7, 16, 4);
+    ctx.fillStyle = "#e8eaee";
+    ctx.textAlign = "left";
+    ctx.fillText("Pull occupied", pad + 22, y);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#c8ccd4";
+    ctx.fillText(formatFeet(pullOccupied), w - pad, y);
     ctx.textAlign = "left";
     y += rowH;
   }
@@ -507,7 +521,7 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
     overlayHrefs[ov.id] = `files/${name}`;
   });
 
-  const { footage, removeFootage, counts, usedLines, removeLines, usedPoints, addPipe, cables, risers, anchors, peds, vaults } = plantTotals(
+  const { footage, removeFootage, counts, usedLines, removeLines, usedPoints, addPipe, pullOccupied, cables, risers, anchors, peds, vaults } = plantTotals(
     project.lines,
     project.points,
   );
@@ -524,6 +538,11 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
     ...(addPipe > 0
       ? [
           `<tr><td><font color="#22c55e">addt. Pipe/width</font></td><td align="right">${escapeXml(formatFeet(addPipe))}</td></tr>`,
+        ]
+      : []),
+    ...(pullOccupied > 0
+      ? [
+          `<tr><td><font color="#2563eb">Pull occupied</font></td><td align="right">${escapeXml(formatFeet(pullOccupied))}</td></tr>`,
         ]
       : []),
     ...cables.map(
@@ -686,6 +705,9 @@ ${slashXml(slashMarks(path))}`;
           line.hideLegend ? `<Data name="hideLegend"><value>1</value></Data>` : "",
           line.hideFootage ? `<Data name="hideFootage"><value>1</value></Data>` : "",
           line.labelSize && line.labelSize !== "md" ? `<Data name="labelSize"><value>${line.labelSize}</value></Data>` : "",
+          (line.pipeRoles ?? []).length > 0 ? `<Data name="pipeRoles"><value>${escapeXml(line.pipeRoles.join(","))}</value></Data>` : "",
+          line.occupied ? `<Data name="occupied"><value>1</value></Data>` : "",
+          line.hideSpan ? `<Data name="hideSpan"><value>1</value></Data>` : "",
           `<Data name="kind"><value>${line.kind}</value></Data>`,
           `<Data name="id"><value>${escapeXml(line.id)}</value></Data>`,
           (line.splits ?? []).length > 0 ? `<Data name="splits"><value>${(line.splits ?? []).map((at) => `${at.lat},${at.lng}`).join(";")}</value></Data>` : "",
@@ -1202,6 +1224,9 @@ export async function parsePlantFile(file: File): Promise<
         name: dataValue(pm, "lineName") || (kind === "road" ? name : ""),
         splits,
         dots,
+        pipeRoles: dataValue(pm, "pipeRoles").split(",").filter((role): role is "ug" | "width" | "share" => role === "ug" || role === "width" || role === "share"),
+        occupied: dataValue(pm, "occupied") === "1",
+        hideSpan: dataValue(pm, "hideSpan") === "1",
       });
       continue;
     }

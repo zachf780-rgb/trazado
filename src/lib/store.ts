@@ -18,7 +18,7 @@ import type {
 import { EMPTY_PROJECT, LINE_KINDS, CABLE_IDS, isCableType } from "./types";
 import { uid } from "./utils";
 import { constrainCardinal, haversineFeet, lineLossNote, normalizeBox, notesWithLoss } from "./geo";
-import { defaultPointName, allowedCables, allowsEmpty, canResize, isLineKind, isPedType, isPointKind, isSnapTarget, isVaultType, pedestalDir } from "./presets";
+import { defaultPointName, allowedCables, allowsEmpty, canResize, isLineKind, isPedType, isPipeRole, isPointKind, isSnapTarget, isVaultType, pedestalDir } from "./presets";
 
 const HISTORY_LIMIT = 60;
 
@@ -80,7 +80,7 @@ interface PlantState extends PlantProject {
   updateLine: (
     id: string,
     patch: Partial<
-      Pick<LineFeature, "notes" | "name" | "parallel" | "joinEnds" | "intoSlot" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "emptyPipe" | "remove" | "fiberUnit" | "overrideFootage" | "footageText" | "hideLegend" | "hideFootage" | "labelSize">
+      Pick<LineFeature, "notes" | "name" | "parallel" | "joinEnds" | "intoSlot" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "emptyPipe" | "remove" | "fiberUnit" | "overrideFootage" | "footageText" | "hideLegend" | "hideFootage" | "labelSize" | "pipeRoles" | "occupied" | "hideSpan">
     >,
   ) => void;
   updatePoint: (id: string, patch: Partial<Pick<PointFeature, "name" | "description" | "labelSide" | "riser" | "anchors" | "remove" | "hideLegend" | "pedType" | "pedRotate" | "vaultType" | "size">>) => void;
@@ -120,12 +120,12 @@ function isSlot(value: unknown): value is Exclude<SlotChoice, ""> {
   return isCable(value) || value === "empty";
 }
 
-function countedCables(value: unknown, legacy: unknown, allowed: Set<string>): CableType[] {
+function countedCables(value: unknown, legacy: unknown, allowed: Set<string>, cap = 4): CableType[] {
   const raw = Array.isArray(value) ? value : legacy ? [legacy] : [];
   const counts = new Map<CableType, number>();
   for (const id of raw) {
     if (!isCable(id) || (allowed.size > 0 && !allowed.has(id))) continue;
-    counts.set(id, Math.min(4, (counts.get(id) ?? 0) + 1));
+    counts.set(id, Math.min(cap, (counts.get(id) ?? 0) + 1));
   }
   return CABLE_IDS.filter((id) => counts.has(id)).flatMap((id) => Array.from({ length: counts.get(id) ?? 0 }, () => id));
 }
@@ -140,7 +140,7 @@ function cableFields(line: Partial<LineFeature> & { cable?: unknown }): Pick<
 > {
   const parallel = line.parallel === true;
   const allowed = new Set(allowedCables(line.kind));
-  const counted = countedCables(line.cables, line.cable, line.kind ? allowed : new Set(CABLE_IDS));
+  const counted = countedCables(line.cables, line.cable, line.kind ? allowed : new Set(CABLE_IDS), line.kind === "drop" ? 12 : 4);
   let slot1: SlotChoice = isSlot(line.slot1) ? line.slot1 : "";
   let slot2: SlotChoice = isSlot(line.slot2) ? line.slot2 : "";
   if (parallel && slot1 === "" && slot2 === "") {
@@ -241,6 +241,9 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
             .filter((dot) => dot && isLatLng(dot.at) && typeof dot.peer === "string")
             .map((dot) => ({ at: dot.at, peer: dot.peer, show: dot.show !== false }))
         : [],
+      pipeRoles: Array.isArray(line.pipeRoles) ? line.pipeRoles.filter(isPipeRole) : [],
+      occupied: line.occupied === true,
+      hideSpan: line.hideSpan === true,
     }));
   }
   const points: PointFeature[] = [];
@@ -603,6 +606,9 @@ export const usePlantStore = create<PlantState>()(
             name: "",
             splits: [],
             dots: d.pending.map((join) => ({ at: join.at, peer: join.targetId, show: join.showDot })),
+            pipeRoles: [],
+            occupied: false,
+            hideSpan: false,
           });
           const lines = s.lines.map((existing) => {
             const joins = d.pending.filter((join) => join.targetId === existing.id);

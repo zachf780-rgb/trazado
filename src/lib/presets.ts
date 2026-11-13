@@ -1,6 +1,6 @@
-import type { CableType, LineFeature, LineKind, PedType, PointFeature, PointKind, Tool, VaultType } from "./types";
+import type { CableType, LineFeature, LineKind, PedType, PipeRole, PointFeature, PointKind, Tool, VaultType } from "./types";
 import { LINE_KINDS, POINT_KINDS } from "./types";
-import { cableEntries, legendFeet } from "./geo";
+import { cableEntries, reportedFeet } from "./geo";
 
 export const LINE_WIDTH = 3;
 export const DROP_WIDTH = 1.5;
@@ -305,8 +305,24 @@ export function allowsEmpty(kind: LineKind | undefined): boolean {
   return kind !== "drop";
 }
 
+export function pipeAccount(kind: LineKind | undefined): boolean {
+  return kind === "ug-new" || kind === "in-4" || kind === "in-2" || kind === "in-075";
+}
+
 export function joinsAtEnds(kind: LineKind | undefined): boolean {
   return kind === "ug-new" || kind === "ug-pull" || kind === "drop";
+}
+
+export function isPipeRole(value: unknown): value is PipeRole {
+  return value === "ug" || value === "width" || value === "share";
+}
+
+export function alignPipeRoles(cables: CableType[], roles: PipeRole[] | undefined): PipeRole[] {
+  return cables.map((_, index) => {
+    const role = roles?.[index];
+    if (isPipeRole(role)) return role;
+    return index === 0 ? "ug" : "share";
+  });
 }
 
 const CABLE_LABEL: Record<CableType, string> = {
@@ -330,6 +346,7 @@ export function plantTotals(
   const footage = emptyFootage();
   const removeFootage = emptyFootage();
   let addPipe = 0;
+  let pullOccupied = 0;
   const ug = { "625": 0, "875": 0 };
   const ae = { "625": 0, "875": 0 };
   const other = { "625": 0, "875": 0 };
@@ -342,25 +359,40 @@ export function plantTotals(
   };
   for (const line of lines) {
     if (!isLineKind(line.kind) || line.kind === "road") continue;
-    const feet = legendFeet(line);
+    const hideSpan = line.hideSpan === true && (line.kind === "in-4" || line.kind === "in-2" || line.kind === "in-075");
+    const spanFeet = line.hideLegend || hideSpan ? 0 : reportedFeet(line);
+    const cableFeet = line.hideLegend ? 0 : reportedFeet(line);
     if (line.remove) {
-      removeFootage[line.kind] += feet;
+      removeFootage[line.kind] += line.hideLegend ? 0 : reportedFeet(line);
       continue;
     }
-    footage[line.kind] += feet;
-    if (line.parallel && line.kind === "ug-new") addPipe += feet;
+    const entries = cableEntries(line);
+    if (line.kind === "ug-pull") {
+      const copies = Math.max(1, entries.length);
+      const total = spanFeet * copies;
+      if (line.occupied && entries.length > 1) pullOccupied += total;
+      else footage[line.kind] += total;
+    } else if (!line.parallel && pipeAccount(line.kind) && entries.length > 1) {
+      for (const role of alignPipeRoles(entries.map((entry) => entry.cable), line.pipeRoles)) {
+        if (role === "ug") footage[line.kind] += spanFeet;
+        else if (role === "width") addPipe += spanFeet;
+      }
+    } else {
+      footage[line.kind] += spanFeet;
+      if (line.parallel && line.kind === "ug-new") addPipe += spanFeet;
+    }
     const bucket =
       line.kind === "ug-new" || line.kind === "ug-pull"
         ? ug
         : line.kind === "aerial-new" || line.kind === "aerial-overlash"
           ? ae
           : other;
-    for (const entry of cableEntries(line)) {
+    for (const entry of entries) {
       if (entry.cable === "fiber") {
         const count = entry.count.trim();
-        fiber.set(count, (fiber.get(count) ?? 0) + feet);
-      } else if (entry.cable === "625" || entry.cable === "875") bucket[entry.cable] += feet;
-      else dropFeet[entry.cable] += feet;
+        fiber.set(count, (fiber.get(count) ?? 0) + cableFeet);
+      } else if (entry.cable === "625" || entry.cable === "875") bucket[entry.cable] += cableFeet;
+      else dropFeet[entry.cable] += cableFeet;
     }
   }
   const counts = emptyCounts();
@@ -431,7 +463,7 @@ export function plantTotals(
     ...fiberRows,
     ...dropRows,
   ];
-  return { footage, removeFootage, counts, usedLines, removeLines, usedPoints, grand, addPipe, cables, risers, anchors, peds, vaults };
+  return { footage, removeFootage, counts, usedLines, removeLines, usedPoints, grand, addPipe, pullOccupied, cables, risers, anchors, peds, vaults };
 }
 
 export function linePreset(kind: LineKind): LinePreset {

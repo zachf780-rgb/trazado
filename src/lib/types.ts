@@ -38,6 +38,8 @@ export function isCableType(value: unknown): value is CableType {
 
 export type LabelSize = "sm" | "md" | "lg";
 
+export type PipeRole = "ug" | "width" | "share";
+
 export interface LineDot {
   at: LatLng;
   peer: string;
@@ -68,6 +70,9 @@ export interface LineFeature {
   name: string;
   splits: LatLng[];
   dots: LineDot[];
+  pipeRoles: PipeRole[];
+  occupied: boolean;
+  hideSpan: boolean;
 }
 
 export type LabelSide = "top" | "bottom" | "left" | "right";
