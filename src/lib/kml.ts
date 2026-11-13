@@ -353,21 +353,21 @@ function legendPng(lines: LineFeature[], points: PointFeature[]): string {
   return canvas.toDataURL("image/png");
 }
 
-function outlinedLabelDataUrl(text: string, color: string, plate: boolean, large: boolean): string {
+function outlinedLabelDataUrl(text: string, color: string, plate: boolean): { url: string; w: number; h: number; fontSize: number } {
   const drawn = text.split("\n").map((line) => line.trim()).filter(Boolean);
   const lines = drawn.length > 0 ? drawn : [text];
-  if (typeof document === "undefined") return "";
-  const fontSize = large ? 40 : 32;
+  const fontSize = 64;
+  if (typeof document === "undefined") return { url: "", w: 32, h: 32, fontSize };
   const font = `700 ${fontSize}px "IBM Plex Mono", ui-monospace, monospace`;
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
-  if (!ctx) return "";
+  if (!ctx) return { url: "", w: 32, h: 32, fontSize };
   ctx.font = font;
   const width = Math.max(...lines.map((line) => ctx.measureText(line).width), 8);
-  const stroke = large ? 9 : 7;
-  const padX = stroke + 18;
-  const padY = stroke + 12;
-  const lineH = Math.round(fontSize * 1.25);
+  const stroke = 12;
+  const padX = stroke + 6;
+  const padY = stroke + 4;
+  const lineH = fontSize + stroke;
   const w = Math.ceil(width + padX * 2);
   const h = Math.ceil(lines.length * lineH + padY * 2);
   canvas.width = w;
@@ -376,7 +376,7 @@ function outlinedLabelDataUrl(text: string, color: string, plate: boolean, large
   if (plate) {
     ctx.fillStyle = "rgba(255,255,255,0.92)";
     ctx.beginPath();
-    ctx.roundRect(stroke, stroke, w - stroke * 2, h - stroke * 2, 10);
+    ctx.roundRect(4, 4, w - 8, h - 8, 12);
     ctx.fill();
   }
   ctx.font = font;
@@ -392,19 +392,13 @@ function outlinedLabelDataUrl(text: string, color: string, plate: boolean, large
     ctx.strokeText(line, w / 2, y);
     ctx.fillText(line, w / 2, y);
   });
-  return canvas.toDataURL("image/png");
+  return { url: canvas.toDataURL("image/png"), w, h, fontSize };
 }
 
-function labelIconScale(size: LabelSize, large: boolean): number {
-  if (size === "lg") return large ? 1.55 : 1.75;
-  if (size === "sm") return large ? 0.85 : 0.95;
-  return large ? 1.15 : 1.3;
-}
-
-function cableGapFt(size: LabelSize): number {
-  if (size === "lg") return 9;
-  if (size === "sm") return 4;
-  return 6;
+function geIconScale(w: number, h: number, fontSize: number, size: LabelSize): number {
+  const target = size === "lg" ? 22 : size === "sm" ? 12 : 16;
+  const scale = (target / fontSize) * (Math.min(w, h) / 32);
+  return Math.max(0.2, Math.round(scale * 100) / 100);
 }
 
 function kmlPaint(hex: string, opacity: number): string {
@@ -425,26 +419,28 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
   const poleFiles = new Map<string, string>();
   const pedFiles = new Map<string, string>();
   const vaultFiles = new Map<string, string>();
-  const plateFiles = new Map<string, string>();
-  function artHref(text: string, color: string, large: boolean): string {
-    const key = `${labelPlate ? "p" : "n"}|${large ? "l" : "s"}|${color}|${text}`;
+  const plateFiles = new Map<string, { href: string; w: number; h: number; fontSize: number }>();
+  function artFor(text: string, color: string): { href: string; w: number; h: number; fontSize: number } {
+    const key = `${labelPlate ? "p" : "n"}|${color}|${text}`;
     const hit = plateFiles.get(key);
     if (hit) return hit;
+    const drawn = outlinedLabelDataUrl(text, color, labelPlate);
     const name = `label-${plateFiles.size + 1}.png`;
-    files!.file(name, dataUrlToBytes(outlinedLabelDataUrl(text, color, labelPlate, large)).bytes);
-    const href = `files/${name}`;
-    plateFiles.set(key, href);
-    return href;
+    files!.file(name, dataUrlToBytes(drawn.url).bytes);
+    const art = { href: `files/${name}`, w: drawn.w, h: drawn.h, fontSize: drawn.fontSize };
+    plateFiles.set(key, art);
+    return art;
   }
-  function textMark(text: string, at: LatLng, _kmlColor: string, hex: string, large = false, size: LabelSize = "md"): string {
+  function textMark(text: string, at: LatLng, hex: string, size: LabelSize = "md"): string {
+    const art = artFor(text, hex);
     return `      <Placemark>
         <name></name>
         <ExtendedData><Data name="spanLabel"><value>1</value></Data></ExtendedData>
         <Style>
           <IconStyle>
-            <scale>${labelIconScale(size, large)}</scale>
+            <scale>${geIconScale(art.w, art.h, art.fontSize, size)}</scale>
             <hotSpot x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
-            <Icon><href>${escapeXml(artHref(text, hex, large))}</href></Icon>
+            <Icon><href>${escapeXml(art.href)}</href></Icon>
           </IconStyle>
           <LabelStyle><scale>0</scale></LabelStyle>
         </Style>
@@ -596,7 +592,6 @@ ${slashXml(slashMarks(path))}`;
     if (lines.length === 0) return "";
     const preset = ALL_LINE_PRESETS.find((p) => p.id === kind);
     const labelColor = preset?.kmlColor ?? "ffffffff";
-    const centerColor = labelColor;
     const offsetColor = hexToKmlColor(tintHex(preset?.color ?? "#d4d4d8", 0.42));
     const gear = project.points
       .filter((p) => p.kind === "pedestal" || p.kind === "vault" || p.kind === "mdu" || p.kind === "pole")
@@ -613,19 +608,16 @@ ${slashXml(slashMarks(path))}`;
             const hex = preset?.color ?? "#d4d4d8";
             const twinHex = tintHex(hex, 0.42);
             const size = line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
-            const footage = textMark(parts.footage, span.labelAt, labelColor, hex, false, size);
-            if (!line.parallel) {
-              return parts.detail
-                ? [footage, textMark(parts.detail, offsetBeside(span.labelAt, span.from, span.to, cableGapFt(size), 1), labelColor, hex, true, size)].join("\n")
-                : footage;
-            }
-            const cableMark = (name: string, at: LatLng, kmlColor: string, paint: string) =>
-              name ? textMark(name, at, kmlColor, paint, true, size) : "";
+            const stacked = parts.detail ? `${parts.footage}\n${parts.detail}` : parts.footage;
+            const footage = textMark(stacked, span.labelAt, hex, size);
+            if (!line.parallel) return footage;
+            const cableMark = (name: string, at: LatLng, paint: string) =>
+              name ? textMark(name, at, paint, size) : "";
             const footageAt = offsetBeside(span.labelAt, span.from, span.to, 4, -1);
             return [
               footage.replace(coord(span.labelAt), coord(footageAt)),
-              cableMark(slotCableTag(line, 1), offsetBeside(span.cableAt, span.from, span.to, 4, -1), centerColor, hex),
-              cableMark(slotCableTag(line, 2), offsetBeside(span.cableAt2, span.from, span.to, 12, 1), offsetColor, twinHex),
+              cableMark(slotCableTag(line, 1), offsetBeside(span.cableAt, span.from, span.to, 4, -1), hex),
+              cableMark(slotCableTag(line, 2), offsetBeside(span.cableAt2, span.from, span.to, 12, 1), twinHex),
             ]
               .filter(Boolean)
               .join("\n");
@@ -691,7 +683,7 @@ ${slashXml(slashMarks(path))}`;
           ? (() => {
               const mid = pathMidpoint(line.path);
               if (!mid) return "";
-              return textMark(visibleLine, mid, "ffe4e4e7", "#e4e4e7", false, line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md");
+              return textMark(visibleLine, mid, "#e4e4e7", line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md");
             })()
           : "";
         return `      <Placemark>
