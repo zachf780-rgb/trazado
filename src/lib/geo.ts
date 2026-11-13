@@ -1168,7 +1168,20 @@ export function spanParts(
 ): { footage: string; detail: string } {
   const tags = cableEntries(line).map((entry) => cableTag(entry.cable, entry.count));
   if (line.emptyPipe && !tags.includes("empty")) tags.push("empty");
-  const detail = line.parallel ? "" : tags.join("/");
+  const order: string[] = [];
+  const counts = new Map<string, number>();
+  for (const tag of tags) {
+    if (!counts.has(tag)) order.push(tag);
+    counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  }
+  const detail = line.parallel
+    ? ""
+    : order
+        .map((tag) => {
+          const n = counts.get(tag) ?? 1;
+          return n > 1 ? `${tag} x${n}` : tag;
+        })
+        .join("/");
   const fiberOnlyLabel =
     line.fiberUnit === "km" && line.kind !== "drop" && cableEntries(line).some((entry) => entry.cable === "fiber");
   const footage = fiberOnlyLabel ? formatKmLabel(feet) : formatFootageLabel(feet);

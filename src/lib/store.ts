@@ -114,9 +114,14 @@ function isSlot(value: unknown): value is Exclude<SlotChoice, ""> {
   return isCable(value) || value === "empty";
 }
 
-function uniqueCables(value: unknown, legacy: unknown): CableType[] {
+function countedCables(value: unknown, legacy: unknown, allowed: Set<string>): CableType[] {
   const raw = Array.isArray(value) ? value : legacy ? [legacy] : [];
-  return CABLE_IDS.filter((id) => raw.includes(id));
+  const counts = new Map<CableType, number>();
+  for (const id of raw) {
+    if (!isCable(id) || (allowed.size > 0 && !allowed.has(id))) continue;
+    counts.set(id, Math.min(4, (counts.get(id) ?? 0) + 1));
+  }
+  return CABLE_IDS.filter((id) => counts.has(id)).flatMap((id) => Array.from({ length: counts.get(id) ?? 0 }, () => id));
 }
 
 function countText(value: unknown): string {
@@ -129,13 +134,12 @@ function cableFields(line: Partial<LineFeature> & { cable?: unknown }): Pick<
 > {
   const parallel = line.parallel === true;
   const allowed = new Set(allowedCables(line.kind));
-  const unique = uniqueCables(line.cables, line.cable).filter((id) => !line.kind || allowed.has(id));
-  const raw = Array.isArray(line.cables) ? line.cables.filter(isCable) : unique;
+  const counted = countedCables(line.cables, line.cable, line.kind ? allowed : new Set(CABLE_IDS));
   let slot1: SlotChoice = isSlot(line.slot1) ? line.slot1 : "";
   let slot2: SlotChoice = isSlot(line.slot2) ? line.slot2 : "";
   if (parallel && slot1 === "" && slot2 === "") {
-    slot1 = raw.find((id) => allowed.has(id)) ?? "";
-    slot2 = raw.filter((id) => allowed.has(id))[1] ?? "";
+    slot1 = counted.find((id) => allowed.has(id)) ?? "";
+    slot2 = counted.filter((id) => allowed.has(id))[1] ?? "";
   }
   const emptyOk = !line.kind || allowsEmpty(line.kind);
   if (!emptyOk) {
@@ -149,7 +153,7 @@ function cableFields(line: Partial<LineFeature> & { cable?: unknown }): Pick<
   return {
     slot1: parallel ? slot1 : "",
     slot2: parallel ? slot2 : "",
-    cables: parallel ? [slot1, slot2].filter(isCable) : unique,
+    cables: parallel ? [slot1, slot2].filter(isCable) : counted,
     fiberCount: countText(line.fiberCount),
     fiberCount2: countText(line.fiberCount2),
   };

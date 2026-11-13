@@ -1198,16 +1198,22 @@ function Inspector({ line, point, polygon, overlay }) {
 							className: "mr-1 text-xs text-muted-foreground",
 							children: "Cable"
 						}),
-						cableChoices(line.kind).map((choice) => /* @__PURE__ */ jsx("button", {
-							type: "button",
-							className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", line.cables.includes(choice.id) ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
-							onClick: () => {
-								const order = cableChoices(line.kind).map((item) => item.id);
-								const next = line.cables.includes(choice.id) ? line.cables.filter((cable) => cable !== choice.id) : [...line.cables, choice.id];
-								usePlantStore.getState().updateLine(line.id, { cables: order.filter((cable) => next.includes(cable)) });
-							},
-							children: choice.label
-						}, choice.id)),
+						cableChoices(line.kind).map((choice) => {
+							const count = line.cables.filter((id) => id === choice.id).length;
+							return /* @__PURE__ */ jsx("button", {
+								type: "button",
+								className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", count > 0 ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
+								onClick: () => {
+									const nextCount = count >= 4 ? 0 : count + 1;
+									const cables = cableChoices(line.kind).flatMap((item) => {
+										const n = item.id === choice.id ? nextCount : line.cables.filter((id) => id === item.id).length;
+										return Array.from({ length: n }, () => item.id);
+									});
+									usePlantStore.getState().updateLine(line.id, { cables });
+								},
+								children: count > 1 ? `${choice.label} ×${count}` : choice.label
+							}, choice.id);
+						}),
 						allowsEmpty(line.kind) ? /* @__PURE__ */ jsx("button", {
 							type: "button",
 							className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", line.emptyPipe ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
@@ -1216,6 +1222,10 @@ function Inspector({ line, point, polygon, overlay }) {
 						}) : null
 					]
 				}),
+				line.kind !== "road" && !line.parallel ? /* @__PURE__ */ jsx("p", {
+					className: "mt-1 text-[10px] leading-tight text-muted-foreground",
+					children: "Tap a cable again to add another, up to 4."
+				}) : null,
 				!line.parallel && line.cables.includes("fiber") ? /* @__PURE__ */ jsxs("label", {
 					className: "mt-2 flex items-center gap-2 text-xs",
 					children: [
