@@ -854,7 +854,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
             }).addTo(group);
           }
         }
-      } else for (const span of footageSpans(line.path, gearPoints(points), line.splits ?? [])) {
+      } else for (const span of footageSpans(line.path, gearPoints(points), line.splits ?? [], (line.dots ?? []).map((dot) => dot.at))) {
         const parts = spanParts(spanShownFeet(span.feet, measured, shown), line);
         const mid = line.path[Math.floor(line.path.length / 2)] ?? line.path[0];
         const origin = mid ? map.latLngToContainerPoint([mid.lat, mid.lng]) : L.point(0, 0);
@@ -869,7 +869,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         }).addTo(group);
       }
       if (line.kind !== "road" && line.parallel) {
-        for (const span of objectSpans(line.path, gearPoints(points))) {
+        for (const span of objectSpans(line.path, gearPoints(points), [...(line.splits ?? []), ...(line.dots ?? []).map((dot) => dot.at)])) {
           const tag1 = slotCableTag(line, 1);
           const tag2 = slotCableTag(line, 2);
           const mid = span.slice[Math.floor(span.slice.length / 2)] ?? span.from;

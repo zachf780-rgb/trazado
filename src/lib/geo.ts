@@ -291,7 +291,7 @@ export interface FootageSpan {
 }
 
 /** Split at turns over 30°, snapped equipment, and perpendicular line joins. Totals still use the whole path. */
-export function footageSpans(path: LatLng[], gear: LatLng[] = [], splits: LatLng[] = []): FootageSpan[] {
+export function footageSpans(path: LatLng[], gear: LatLng[] = [], splits: LatLng[] = [], joints: LatLng[] = []): FootageSpan[] {
   const marked = pathWithSplits(path, splits);
   if (marked.length < 2) return [];
   const cuts: number[] = [0];
@@ -333,7 +333,7 @@ export function footageSpans(path: LatLng[], gear: LatLng[] = [], splits: LatLng
   const objectCuts = [0];
   for (let i = 1; i < marked.length - 1; i++) {
     const here = marked[i];
-    if (here && gear.some((target) => haversineFeet(here, target) <= 15)) objectCuts.push(i);
+    if (here && (here.cut || gear.some((target) => haversineFeet(here, target) <= 15) || joints.some((joint) => haversineFeet(here, joint) <= 15))) objectCuts.push(i);
   }
   objectCuts.push(marked.length - 1);
   for (let c = 0; c < objectCuts.length - 1; c++) {
@@ -345,7 +345,7 @@ export function footageSpans(path: LatLng[], gear: LatLng[] = [], splits: LatLng
     let best = -1;
     let bestD = Infinity;
     spans.forEach((span, index) => {
-      if (span.b < oa || span.a > ob) return;
+      if (span.b <= oa || span.a >= ob) return;
       const dist = haversineFeet(span.labelAt, mid);
       if (dist < bestD) {
         bestD = dist;
@@ -383,18 +383,20 @@ export interface ObjectSpan {
   to: LatLng;
 }
 
-/** One span per run between equipment, or the whole line when it does not touch any. */
-export function objectSpans(path: LatLng[], gear: LatLng[] = []): ObjectSpan[] {
-  if (path.length < 2) return [];
+/** One cable span per run between equipment or a line snap. */
+export function objectSpans(path: LatLng[], gear: LatLng[] = [], breaks: LatLng[] = []): ObjectSpan[] {
+  const marked = pathWithSplits(path, breaks);
+  if (marked.length < 2) return [];
   const cuts = [0];
-  for (let i = 1; i < path.length - 1; i++) {
-    const here = path[i];
-    if (here && gear.some((target) => haversineFeet(here, target) <= 15)) cuts.push(i);
+  for (let i = 1; i < marked.length - 1; i++) {
+    const here = marked[i];
+    if (!here) continue;
+    if (here.cut || gear.some((target) => haversineFeet(here, target) <= 15)) cuts.push(i);
   }
-  cuts.push(path.length - 1);
+  cuts.push(marked.length - 1);
   const spans: ObjectSpan[] = [];
   for (let c = 0; c < cuts.length - 1; c++) {
-    const slice = path.slice(cuts[c] ?? 0, (cuts[c + 1] ?? 0) + 1);
+    const slice = marked.slice(cuts[c] ?? 0, (cuts[c + 1] ?? 0) + 1);
     const from = slice[0];
     const to = slice[slice.length - 1];
     if (!from || !to || slice.length < 2) continue;

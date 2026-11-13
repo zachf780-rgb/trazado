@@ -640,7 +640,7 @@ ${slashXml(slashMarks(path))}`;
       .map((line) => {
         const measured = pathFootage(line.path);
         const shown = reportedFeet(line);
-        const spans = footageSpans(line.path, gear, line.splits ?? []);
+        const spans = footageSpans(line.path, gear, line.splits ?? [], (line.dots ?? []).map((dot) => dot.at));
         const labels = line.kind === "road" ? "" : spans
           .map((span) => {
             const shownFeet = spanShownFeet(span.feet, measured, shown);
@@ -657,7 +657,7 @@ ${slashXml(slashMarks(path))}`;
         const cableLabels =
           line.kind === "road" || !line.parallel
             ? ""
-            : objectSpans(line.path, gear)
+            : objectSpans(line.path, gear, [...(line.splits ?? []), ...(line.dots ?? []).map((dot) => dot.at)])
                 .map((span) => {
                   const hex = preset?.color ?? "#d4d4d8";
                   const twinHex = tintHex(hex, 0.42);
