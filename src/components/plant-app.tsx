@@ -164,6 +164,7 @@ export function PlantApp() {
 	const future = usePlantStore((s) => s.future);
 	const gps = usePlantStore((s) => s.gps);
 	const snapAsk = usePlantStore((s) => s.snapAsk);
+	const lineSnap = usePlantStore((s) => s.lineSnap);
 	useEffect(() => {
 		return () => {
 			if (gpsWatch.current != null) navigator.geolocation.clearWatch(gpsWatch.current);
@@ -184,10 +185,12 @@ export function PlantApp() {
 			if (e.key === "Enter") {
 				e.preventDefault();
 				if (s.snapAsk) s.confirmSnap();
+				else if (s.lineSnap) s.confirmLineSnap();
 				else s.finishDraft();
 			}
 			if (e.key === "Escape") {
 				if (s.snapAsk) s.dismissSnap();
+				else if (s.lineSnap) s.dismissLineSnap(true);
 				else if (s.draft) s.cancelDraft();
 				else s.clearSelection();
 			}
@@ -645,6 +648,39 @@ export function PlantApp() {
 						})
 					]
 				}) : null,
+				lineSnap && isLineTool(tool) ? /* @__PURE__ */ jsxs("div", {
+					className: "pointer-events-auto absolute bottom-28 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-[var(--radius-md)] border border-border bg-elevated px-3 py-2 shadow-lg md:bottom-6",
+					children: [
+						/* @__PURE__ */ jsx("p", {
+							className: "pr-1 text-sm whitespace-nowrap",
+							children: lineSnap.kind === "end" ? "Snap to line end?" : "Snap to line?"
+						}),
+						/* @__PURE__ */ jsxs("label", {
+							className: "flex items-center gap-1 text-xs text-muted-foreground",
+							children: [/* @__PURE__ */ jsx("input", {
+								type: "checkbox",
+								className: "size-3.5 accent-white",
+								checked: lineSnap.showDot,
+								onChange: (e) => usePlantStore.getState().setLineSnapDot(e.target.checked)
+							}), "Dot"]
+						}),
+						/* @__PURE__ */ jsx(Button, {
+							variant: "secondary",
+							size: "icon",
+							className: "size-8",
+							"aria-label": "Don't snap",
+							onClick: () => usePlantStore.getState().dismissLineSnap(true),
+							children: /* @__PURE__ */ jsx(X, {})
+						}),
+						/* @__PURE__ */ jsx(Button, {
+							size: "icon",
+							className: "size-8",
+							"aria-label": "Snap",
+							onClick: () => usePlantStore.getState().confirmLineSnap(),
+							children: /* @__PURE__ */ jsx(Check, {})
+						})
+					]
+				}) : null,
 				legendOpen ? /* @__PURE__ */ jsxs("aside", {
 					className: "absolute right-2 bottom-[7.75rem] z-20 max-h-[calc(100dvh-16rem)] w-52 overflow-y-auto rounded-[var(--radius-md)] border border-border bg-elevated/95 px-2 py-1.5 md:right-4 md:bottom-4 md:max-h-[calc(100dvh-6rem)]",
 					children: [
@@ -1057,6 +1093,15 @@ function Inspector({ line, point, polygon, overlay }) {
 						}, size))
 					]
 				}),
+				(line.dots ?? []).length > 0 ? /* @__PURE__ */ jsxs("label", {
+					className: "mt-2 flex items-center gap-2 text-xs",
+					children: [/* @__PURE__ */ jsx("input", {
+						type: "checkbox",
+						className: "size-3.5 accent-white",
+						checked: line.dots.every((dot) => dot.show),
+						onChange: (e) => usePlantStore.getState().setLineDots(line.id, e.target.checked)
+					}), "Junction dot"]
+				}) : null,
 				/* @__PURE__ */ jsxs("label", {
 					className: "mt-3 flex items-center gap-2 text-xs",
 					children: [/* @__PURE__ */ jsx("input", {

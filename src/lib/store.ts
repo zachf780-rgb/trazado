@@ -42,6 +42,7 @@ interface PlantState extends PlantProject {
   gps: GpsFix | null;
   gpsFollow: boolean;
   snapAsk: string | null;
+  lineSnap: { lineId: string; at: LatLng; kind: "end" | "cross"; click: LatLng; showDot: boolean } | null;
   placeSmall: boolean;
   setPlaceSmall: (placeSmall: boolean) => void;
   labelPlate: boolean;
@@ -62,6 +63,11 @@ interface PlantState extends PlantProject {
   askSnap: (pointId: string) => void;
   confirmSnap: () => void;
   dismissSnap: () => void;
+  askLineSnap: (hit: { lineId: string; at: LatLng; kind: "end" | "cross"; click: LatLng; showDot: boolean }) => void;
+  confirmLineSnap: () => void;
+  dismissLineSnap: (place: boolean) => void;
+  setLineSnapDot: (showDot: boolean) => void;
+  setLineDots: (lineId: string, show: boolean) => void;
   select: (sel: Selection | null) => void;
   clearSelection: () => void;
   addPoint: (kind: PointKind, position: LatLng) => void;
@@ -229,6 +235,12 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
       hideFootage: line.hideFootage === true,
       labelSize: isLabelSize(line.labelSize) ? line.labelSize : "md",
       name: typeof line.name === "string" ? line.name : "",
+      splits: Array.isArray(line.splits) ? line.splits.filter(isLatLng) : [],
+      dots: Array.isArray(line.dots)
+        ? line.dots
+            .filter((dot) => dot && isLatLng(dot.at) && typeof dot.peer === "string")
+            .map((dot) => ({ at: dot.at, peer: dot.peer, show: dot.show !== false }))
+        : [],
     }));
   }
   const points: PointFeature[] = [];
@@ -327,6 +339,7 @@ export const usePlantStore = create<PlantState>()(
       gps: null,
       gpsFollow: false,
       snapAsk: null,
+      lineSnap: null,
       placeSmall: false,
       labelPlate: false,
       labelSize: "md",
@@ -343,6 +356,7 @@ export const usePlantStore = create<PlantState>()(
           draft: null,
           pointer: null,
           snapAsk: null,
+          lineSnap: null,
           selection: tool === "select" ? get().selection : null,
         }),
       setShift: (shift) => set({ shift }),
@@ -366,6 +380,78 @@ export const usePlantStore = create<PlantState>()(
         get().extendDraft(point.position, true);
       },
       dismissSnap: () => set({ snapAsk: null }),
+      askLineSnap: (hit) => {
+        if (!isLineKind(get().tool)) return;
+        set({ lineSnap: { ...hit, showDot: true }, snapAsk: null });
+      },
+      setLineSnapDot: (showDot) => {
+        const ask = get().lineSnap;
+        if (ask) set({ lineSnap: { ...ask, showDot } });
+      },
+      confirmLineSnap: () => {
+        const s = get();
+        const ask = s.lineSnap;
+        if (!ask || !isLineKind(s.tool)) {
+          set({ lineSnap: null });
+          return;
+        }
+        const kind = s.tool;
+        const pending = { at: ask.at, targetId: ask.lineId, kind: ask.kind, showDot: ask.showDot };
+        if (!s.draft || s.draft.mode !== "line") {
+          set({
+            lineSnap: null,
+            selection: null,
+            draft: { mode: "line", kind, path: [ask.at], declined: [], pending: [pending] },
+          });
+          return;
+        }
+        set({
+          lineSnap: null,
+          draft: {
+            ...s.draft,
+            path: [...s.draft.path, ask.at],
+            pending: [...s.draft.pending, pending],
+          },
+        });
+      },
+      dismissLineSnap: (place) => {
+        const s = get();
+        const ask = s.lineSnap;
+        if (!ask || !place || !isLineKind(s.tool)) {
+          set({ lineSnap: null });
+          return;
+        }
+        const kind = s.tool;
+        const declined = { lineId: ask.lineId, at: ask.at };
+        if (!s.draft || s.draft.mode !== "line") {
+          set({
+            lineSnap: null,
+            selection: null,
+            draft: { mode: "line", kind, path: [ask.click], declined: [declined], pending: [] },
+          });
+          return;
+        }
+        set({
+          lineSnap: null,
+          draft: {
+            ...s.draft,
+            path: [...s.draft.path, ask.click],
+            declined: [...s.draft.declined, declined],
+          },
+        });
+      },
+      setLineDots: (lineId, show) => {
+        const lines = get().lines.map((line) => ({ ...line, dots: (line.dots ?? []).map((dot) => ({ ...dot })) }));
+        const mine = lines.find((line) => line.id === lineId);
+        if (!mine) return;
+        for (const dot of mine.dots) {
+          dot.show = show;
+          const peer = lines.find((line) => line.id === dot.peer);
+          const match = peer?.dots.find((other) => haversineFeet(other.at, dot.at) < 4 && other.peer === lineId);
+          if (match) match.show = show;
+        }
+        set({ lines });
+      },
       setPlaceSmall: (placeSmall) => set({ placeSmall }),
       setLabelPlate: (labelPlate) => set({ labelPlate }),
       setLabelSize: (labelSize) => set({ labelSize }),
@@ -449,13 +535,13 @@ export const usePlantStore = create<PlantState>()(
           const kind = tool as LineFeature["kind"];
           if (!s.draft || s.draft.mode !== "line") {
             set({
-              draft: { mode: "line", kind, path: [ll] },
+              draft: { mode: "line", kind, path: [ll], declined: [], pending: [] },
               selection: null,
             });
             return;
           }
           set({
-            draft: { mode: "line", kind: s.draft.kind, path: [...s.draft.path, ll] },
+            draft: { mode: "line", kind: s.draft.kind, path: [...s.draft.path, ll], declined: s.draft.declined, pending: s.draft.pending },
           });
         }
       },
@@ -493,7 +579,7 @@ export const usePlantStore = create<PlantState>()(
             }
           }
           if (path.length < 2) return false;
-          const line: LineFeature = stampLoss({
+          const created: LineFeature = stampLoss({
             id: uid(),
             kind: d.kind,
             path,
@@ -515,13 +601,25 @@ export const usePlantStore = create<PlantState>()(
             hideFootage: false,
             labelSize: isLabelSize(s.labelSize) ? s.labelSize : "md",
             name: "",
+            splits: [],
+            dots: d.pending.map((join) => ({ at: join.at, peer: join.targetId, show: join.showDot })),
+          });
+          const lines = s.lines.map((existing) => {
+            const joins = d.pending.filter((join) => join.targetId === existing.id);
+            if (joins.length === 0) return existing;
+            return {
+              ...existing,
+              dots: [...(existing.dots ?? []), ...joins.map((join) => ({ at: join.at, peer: created.id, show: join.showDot }))],
+              splits: [...(existing.splits ?? []), ...joins.filter((join) => join.kind === "cross").map((join) => join.at)],
+            };
           });
           set({
-            ...commit(s, { lines: [...s.lines, line] }),
+            ...commit(s, { lines: [...lines, created] }),
             draft: null,
             pointer: null,
             snapAsk: null,
-            selection: { type: "line", id: line.id },
+            lineSnap: null,
+            selection: { type: "line", id: created.id },
           });
           return true;
         }
@@ -550,17 +648,29 @@ export const usePlantStore = create<PlantState>()(
         return false;
       },
 
-      cancelDraft: () => set({ draft: null, pointer: null, snapAsk: null }),
+      cancelDraft: () => set({ draft: null, pointer: null, snapAsk: null, lineSnap: null }),
 
       moveLineVertex: (id, index, ll) => {
         if (!isLatLng(ll)) return;
+        const lines = get().lines;
+        const current = lines.find((line) => line.id === id);
+        const from = current?.path[index];
         set({
-          lines: get().lines.map((line) => {
-            if (line.id !== id) return line;
-            return stampLoss({
+          lines: lines.map((line) => {
+            if (line.id === id) {
+              const next = stampLoss({
+                ...line,
+                path: line.path.map((p, i) => (i === index ? ll : p)),
+                dots: (line.dots ?? []).map((dot) => (from && haversineFeet(dot.at, from) < 4 ? { ...dot, at: ll } : dot)),
+              });
+              return next;
+            }
+            if (!from) return line;
+            return {
               ...line,
-              path: line.path.map((p, i) => (i === index ? ll : p)),
-            });
+              dots: (line.dots ?? []).map((dot) => (dot.peer === id && haversineFeet(dot.at, from) < 4 ? { ...dot, at: ll } : dot)),
+              splits: (line.splits ?? []).map((at) => (haversineFeet(at, from) < 4 ? ll : at)),
+            };
           }),
         });
       },
@@ -609,7 +719,15 @@ export const usePlantStore = create<PlantState>()(
         if (!sel) return;
         if (sel.type === "line") {
           set({
-            ...commit(s, { lines: s.lines.filter((l) => l.id !== sel.id) }),
+            ...commit(s, {
+              lines: s.lines
+                .filter((line) => line.id !== sel.id)
+                .map((line) => ({
+                  ...line,
+                  dots: (line.dots ?? []).filter((dot) => dot.peer !== sel.id),
+                  splits: (line.splits ?? []).filter((at) => !(s.lines.find((item) => item.id === sel.id)?.dots ?? []).some((dot) => dot.peer === line.id && haversineFeet(dot.at, at) < 4)),
+                })),
+            }),
             selection: null,
           });
         } else if (sel.type === "point") {

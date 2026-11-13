@@ -155,6 +155,117 @@ export function formatKmLabel(ft: number): string {
 
 const TURN_SPLIT_DEG = 30;
 
+export function projectOnSegment(a: LatLng, b: LatLng, p: LatLng): { t: number; dist: number; at: LatLng } {
+  const lat = toRad(a.lat);
+  const x = (ll: LatLng) => toRad(ll.lng - a.lng) * Math.cos(lat) * EARTH_M * FT_PER_M;
+  const y = (ll: LatLng) => toRad(ll.lat - a.lat) * EARTH_M * FT_PER_M;
+  const bx = x(b);
+  const by = y(b);
+  const px = x(p);
+  const py = y(p);
+  const len2 = bx * bx + by * by;
+  if (len2 < 0.01) return { t: 0, dist: haversineFeet(a, p), at: a };
+  const t = Math.max(0, Math.min(1, (px * bx + py * by) / len2));
+  const at = { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+  return { t, dist: haversineFeet(at, p), at };
+}
+
+export interface SnapHit {
+  lineId: string;
+  at: LatLng;
+  kind: "end" | "cross";
+}
+
+export function lineSnapTarget(
+  click: LatLng,
+  from: LatLng | null,
+  lines: { id: string; kind: string; path: LatLng[] }[],
+  project: (ll: LatLng) => { x: number; y: number },
+  declined: { lineId: string; at: LatLng }[],
+): SnapHit | null {
+  const clickPx = project(click);
+  const declinedHit = (lineId: string, at: LatLng) =>
+    declined.some((item) => {
+      if (item.lineId !== lineId) return false;
+      const p = project(item.at);
+      return Math.hypot(p.x - project(at).x, p.y - project(at).y) <= 26;
+    });
+  const ranked: { hit: SnapHit; d: number; rank: number }[] = [];
+  const consider = (hit: SnapHit, d: number, rank: number) => {
+    if (declinedHit(hit.lineId, hit.at)) return;
+    if (from && haversineFeet(from, hit.at) < 2) return;
+    ranked.push({ hit, d, rank });
+  };
+  for (const line of lines) {
+    if (line.kind === "road" || line.path.length < 2) continue;
+    const ends = [line.path[0], line.path[line.path.length - 1]].filter((point): point is LatLng => Boolean(point));
+    for (const end of ends) {
+      const p = project(end);
+      const d = Math.hypot(p.x - clickPx.x, p.y - clickPx.y);
+      if (d <= 18) consider({ lineId: line.id, at: end, kind: "end" }, d, 0);
+    }
+    if (!from || haversineFeet(from, click) < 3) continue;
+    const incoming = bearingDeg(from, click);
+    for (let i = 0; i < line.path.length - 1; i++) {
+      const a = line.path[i];
+      const b = line.path[i + 1];
+      if (!a || !b) continue;
+      const pa = project(a);
+      const pb = project(b);
+      const dx = pb.x - pa.x;
+      const dy = pb.y - pa.y;
+      const len2 = dx * dx + dy * dy;
+      if (len2 < 4) continue;
+      let t = ((clickPx.x - pa.x) * dx + (clickPx.y - pa.y) * dy) / len2;
+      t = Math.max(0, Math.min(1, t));
+      if (t < 0.08 || t > 0.92) continue;
+      const d = Math.hypot(pa.x + dx * t - clickPx.x, pa.y + dy * t - clickPx.y);
+      if (d > 16) continue;
+      let delta = Math.abs(incoming - bearingDeg(a, b)) % 180;
+      if (delta > 90) delta = 180 - delta;
+      if (delta < 65) continue;
+      consider({ lineId: line.id, at: { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t }, kind: "cross" }, d, 1);
+    }
+  }
+  ranked.sort((a, b) => a.rank - b.rank || a.d - b.d);
+  return ranked[0]?.hit ?? null;
+}
+
+function pathWithSplits(path: LatLng[], splits: LatLng[]): (LatLng & { cut?: boolean })[] {
+  const pts: (LatLng & { cut?: boolean })[] = path.map((p) => ({ lat: p.lat, lng: p.lng }));
+  for (const split of splits) {
+    let bestI = -1;
+    let bestD = Infinity;
+    let bestT = 0;
+    let bestAt: LatLng = split;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i];
+      const b = pts[i + 1];
+      if (!a || !b) continue;
+      const proj = projectOnSegment(a, b, split);
+      if (proj.dist < bestD) {
+        bestD = proj.dist;
+        bestI = i;
+        bestT = proj.t;
+        bestAt = proj.at;
+      }
+    }
+    if (bestI < 0 || bestD > 15) continue;
+    if (bestT <= 0.04) {
+      const at = pts[bestI];
+      if (at) at.cut = true;
+      continue;
+    }
+    if (bestT >= 0.96) {
+      const at = pts[bestI + 1];
+      if (at) at.cut = true;
+      continue;
+    }
+    pts.splice(bestI + 1, 0, { ...bestAt, cut: true });
+  }
+  return pts;
+}
+
 export function bearingDeg(a: LatLng, b: LatLng): number {
   const y = Math.sin(toRad(b.lng - a.lng)) * Math.cos(toRad(b.lat));
   const x =
@@ -178,27 +289,28 @@ export interface FootageSpan {
   to: LatLng;
 }
 
-/** Split at turns over 30° and at vertices snapped to equipment. Totals still use the whole path. */
-export function footageSpans(path: LatLng[], gear: LatLng[] = []): FootageSpan[] {
-  if (path.length < 2) return [];
+/** Split at turns over 30°, snapped equipment, and perpendicular line joins. Totals still use the whole path. */
+export function footageSpans(path: LatLng[], gear: LatLng[] = [], splits: LatLng[] = []): FootageSpan[] {
+  const marked = pathWithSplits(path, splits);
+  if (marked.length < 2) return [];
   const cuts: number[] = [0];
-  for (let i = 1; i < path.length - 1; i++) {
-    const prev = path[i - 1];
-    const here = path[i];
-    const next = path[i + 1];
+  for (let i = 1; i < marked.length - 1; i++) {
+    const prev = marked[i - 1];
+    const here = marked[i];
+    const next = marked[i + 1];
     if (!prev || !here || !next) continue;
-    const snapped = gear.some((target) => haversineFeet(here, target) <= 15);
+    const snapped = Boolean(here.cut) || gear.some((target) => haversineFeet(here, target) <= 15);
     if (!snapped && (haversineFeet(prev, here) < 8 || haversineFeet(here, next) < 8)) continue;
     const delta = turnDelta(bearingDeg(prev, here), bearingDeg(here, next));
     if (snapped || delta >= TURN_SPLIT_DEG) cuts.push(i);
   }
-  cuts.push(path.length - 1);
+  cuts.push(marked.length - 1);
 
   const spans: FootageSpan[] = [];
   for (let c = 0; c < cuts.length - 1; c++) {
     const start = cuts[c] ?? 0;
     const end = cuts[c + 1] ?? start;
-    const slice = path.slice(start, end + 1);
+    const slice = marked.slice(start, end + 1);
     if (slice.length < 2) continue;
     const feet = pathFootage(slice);
     if (feet < 1) continue;

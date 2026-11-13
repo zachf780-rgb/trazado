@@ -8,6 +8,7 @@ import { canResize, isLineTool, isPointTool, isSnapTarget, joinsAtEnds, lineOpac
 import {
   constrainCardinal,
   footageSpans,
+  lineSnapTarget,
   formatFootageLabel,
   haversineFeet,
   parallelPath,
@@ -197,6 +198,26 @@ function pointIcon(kind: PointKind, scale = 1): L.Icon {
   return icon;
 }
 
+function tryLineSnap(map: L.Map, ll: LatLng): boolean {
+  const s = usePlantStore.getState();
+  if (!isLineTool(s.tool) || s.tool === "road") return false;
+  const draft = s.draft?.mode === "line" ? s.draft : null;
+  const from = draft?.path[draft.path.length - 1] ?? null;
+  const hit = lineSnapTarget(
+    ll,
+    from,
+    s.lines,
+    (point) => {
+      const px = map.latLngToContainerPoint([point.lat, point.lng]);
+      return { x: px.x, y: px.y };
+    },
+    draft?.declined ?? [],
+  );
+  if (!hit) return false;
+  s.askLineSnap({ ...hit, click: ll, showDot: true });
+  return true;
+}
+
 function gearPoints(points: { kind: PointKind; position: LatLng }[]): LatLng[] {
   return points.filter((point) => isSnapTarget(point.kind)).map((point) => point.position);
 }
@@ -380,11 +401,16 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         return;
       }
       if (s.snapAsk) s.dismissSnap();
+      if (s.lineSnap) usePlantStore.setState({ lineSnap: null });
       if (isPointTool(s.tool)) {
         s.addPoint(s.tool, ll);
         return;
       }
-      if (isLineTool(s.tool) || s.tool === "polygon" || s.tool === "overlay") {
+      if (isLineTool(s.tool)) {
+        if (!tryLineSnap(map, ll)) s.extendDraft(ll);
+        return;
+      }
+      if (s.tool === "polygon" || s.tool === "overlay") {
         s.extendDraft(ll);
       }
     };
@@ -765,9 +791,16 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         interactive: false,
       });
       hit.on("click", (e) => {
-        if (isPointTool(usePlantStore.getState().tool)) return;
+        const s = usePlantStore.getState();
+        if (isPointTool(s.tool)) return;
         L.DomEvent.stopPropagation(e);
-        usePlantStore.getState().select({ type: "line", id: line.id });
+        if (isLineTool(s.tool)) {
+          const ll = { lat: e.latlng.lat, lng: e.latlng.lng };
+          if (s.lineSnap) usePlantStore.setState({ lineSnap: null });
+          if (!tryLineSnap(map, ll)) s.extendDraft(ll);
+          return;
+        }
+        s.select({ type: "line", id: line.id });
       });
       hit.addTo(group);
       vis.addTo(group);
@@ -819,7 +852,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
             }).addTo(group);
           }
         }
-      } else for (const span of footageSpans(line.path, gearPoints(points))) {
+      } else for (const span of footageSpans(line.path, gearPoints(points), line.splits ?? [])) {
         const parts = spanParts(spanShownFeet(span.feet, measured, shown), line);
         const mid = line.path[Math.floor(line.path.length / 2)] ?? line.path[0];
         const origin = mid ? map.latLngToContainerPoint([mid.lat, mid.lng]) : L.point(0, 0);
@@ -889,6 +922,28 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
           handle.on("click", (e) => L.DomEvent.stopPropagation(e));
           handle.addTo(group);
         });
+      }
+    }
+
+    const seenDots = new Set<string>();
+    for (const line of lines) {
+      for (const dot of line.dots ?? []) {
+        if (!dot.show) continue;
+        const key = `${dot.at.lat.toFixed(5)},${dot.at.lng.toFixed(5)}`;
+        if (seenDots.has(key)) continue;
+        seenDots.add(key);
+        const peers = lines.filter((item) => (item.dots ?? []).some((other) => other.show && Math.abs(other.at.lat - dot.at.lat) < 0.00002 && Math.abs(other.at.lng - dot.at.lng) < 0.00002) || (item.id === line.id));
+        const colors = [...new Set(peers.map((item) => linePreset(item.kind).color))];
+        const color = colors.length === 1 ? colors[0] : "#b6b6be";
+        const thick = Math.max(...peers.map((item) => lineWidth(item.kind)));
+        L.circleMarker([dot.at.lat, dot.at.lng], {
+          radius: Math.max(4, thick * 0.7),
+          color,
+          weight: 0,
+          fillColor: color,
+          fillOpacity: 1,
+          interactive: false,
+        }).addTo(group);
       }
     }
 
@@ -1028,6 +1083,29 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         ).addTo(group);
       }
       for (const p of draft.path) ghostPoint(p, draft.kind);
+      const map = mapRef.current;
+      if (pointer && map) {
+        const hit = lineSnapTarget(
+          pointer,
+          last ?? null,
+          usePlantStore.getState().lines,
+          (point) => {
+            const px = map.latLngToContainerPoint([point.lat, point.lng]);
+            return { x: px.x, y: px.y };
+          },
+          draft.declined ?? [],
+        );
+        if (hit) {
+          L.circleMarker([hit.at.lat, hit.at.lng], {
+            radius: 6,
+            color: "#ffffff",
+            weight: 2,
+            fillColor: linePreset(draft.kind).color,
+            fillOpacity: 0.9,
+            interactive: false,
+          }).addTo(group);
+        }
+      }
       if (draft.path.length >= 2 && draft.kind !== "road") {
         for (const span of footageSpans(draft.path, gearPoints(points))) {
           L.marker([span.labelAt.lat, span.labelAt.lng], {

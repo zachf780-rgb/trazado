@@ -450,6 +450,27 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
         </Point>
       </Placemark>`;
   }
+  const dotFiles = new Map<string, string>();
+  function dotHref(color: string): string {
+    const hit = dotFiles.get(color);
+    if (hit) return hit;
+    if (typeof document === "undefined") return "";
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return "";
+    ctx.clearRect(0, 0, 64, 64);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(32, 32, 26, 0, Math.PI * 2);
+    ctx.fill();
+    const name = `dot-${dotFiles.size + 1}.png`;
+    files!.file(name, dataUrlToBytes(canvas.toDataURL("image/png")).bytes);
+    const href = `files/${name}`;
+    dotFiles.set(color, href);
+    return href;
+  }
   for (const point of project.points) {
     if (point.kind === "pole" && (point.riser || point.anchors.length > 0)) {
       const name = poleFileName(point.riser, point.anchors);
@@ -600,7 +621,7 @@ ${slashXml(slashMarks(path))}`;
       .map((line) => {
         const measured = pathFootage(line.path);
         const shown = reportedFeet(line);
-        const spans = footageSpans(line.path, gear);
+        const spans = footageSpans(line.path, gear, line.splits ?? []);
         const labels = line.kind === "road" ? "" : spans
           .map((span) => {
             const shownFeet = spanShownFeet(span.feet, measured, shown);
@@ -666,6 +687,9 @@ ${slashXml(slashMarks(path))}`;
           line.hideFootage ? `<Data name="hideFootage"><value>1</value></Data>` : "",
           line.labelSize && line.labelSize !== "md" ? `<Data name="labelSize"><value>${line.labelSize}</value></Data>` : "",
           `<Data name="kind"><value>${line.kind}</value></Data>`,
+          `<Data name="id"><value>${escapeXml(line.id)}</value></Data>`,
+          (line.splits ?? []).length > 0 ? `<Data name="splits"><value>${(line.splits ?? []).map((at) => `${at.lat},${at.lng}`).join(";")}</value></Data>` : "",
+          (line.dots ?? []).length > 0 ? `<Data name="dots"><value>${(line.dots ?? []).map((dot) => `${dot.at.lat},${dot.at.lng},${escapeXml(dot.peer)},${dot.show ? 1 : 0}`).join(";")}</value></Data>` : "",
           line.name.trim() ? `<Data name="lineName"><value>${escapeXml(line.name.trim())}</value></Data>` : "",
         ]
           .filter(Boolean)
@@ -686,6 +710,34 @@ ${slashXml(slashMarks(path))}`;
               return textMark(visibleLine, mid, "#e4e4e7", line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md");
             })()
           : "";
+        const joinDots = (line.dots ?? [])
+          .filter((dot) => dot.show && (!dot.peer || line.id < dot.peer))
+          .map((dot) => {
+            const own = preset?.color ?? "#d4d4d8";
+            const peer = project.lines.find((item) => item.id === dot.peer);
+            const peerHex = ALL_LINE_PRESETS.find((item) => item.id === peer?.kind)?.color ?? own;
+            const color = peer && peerHex !== own ? "#b6b6be" : own;
+            const href = dotHref(color);
+            if (!href) return "";
+            return `      <Placemark>
+        <name></name>
+        <ExtendedData><Data name="joinDot"><value>1</value></Data></ExtendedData>
+        <Style>
+          <IconStyle>
+            <scale>0.34</scale>
+            <hotSpot x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
+            <Icon><href>${escapeXml(href)}</href></Icon>
+          </IconStyle>
+          <LabelStyle><scale>0</scale></LabelStyle>
+        </Style>
+        <Point>
+          <altitudeMode>clampToGround</altitudeMode>
+          <coordinates>${coord(dot.at)}</coordinates>
+        </Point>
+      </Placemark>`;
+          })
+          .filter(Boolean)
+          .join("\n");
         return `      <Placemark>
         <name></name>
         ${kmlDescription(line.notes)}
@@ -699,7 +751,8 @@ ${slashXml(slashMarks(path))}`;
 ${twinMark}
 ${removal}
 ${roadLabel}
-${labels}`;
+${labels}
+${joinDots}`;
       })
       .join("\n");
     return `    <Folder>
@@ -1088,7 +1141,7 @@ export async function parsePlantFile(file: File): Promise<
 
   for (const pm of Array.from(doc.getElementsByTagName("Placemark"))) {
     const name = textContent(pm.getElementsByTagName("name")[0]);
-    if (name === "__riser" || name === "__anchor" || name === "__remove" || dataValue(pm, "roadLabel") === "1" || dataValue(pm, "spanLabel") === "1" || dataValue(pm, "polyLabel") === "1") continue;
+    if (name === "__riser" || name === "__anchor" || name === "__remove" || dataValue(pm, "roadLabel") === "1" || dataValue(pm, "spanLabel") === "1" || dataValue(pm, "polyLabel") === "1" || dataValue(pm, "joinDot") === "1") continue;
     const notes = textContent(pm.getElementsByTagName("description")[0]);
     const styleUrl = textContent(pm.getElementsByTagName("styleUrl")[0]);
     const lineEl = pm.getElementsByTagName("LineString")[0];
@@ -1112,8 +1165,21 @@ export async function parsePlantFile(file: File): Promise<
         return "";
       };
       const storedSize = dataValue(pm, "labelSize");
+      const storedId = dataValue(pm, "id");
+      const splits = dataValue(pm, "splits").split(";").flatMap((part) => {
+        const [lat, lng] = part.split(",").map(Number);
+        return Number.isFinite(lat) && Number.isFinite(lng) ? [{ lat, lng }] : [];
+      });
+      const dots = dataValue(pm, "dots").split(";").flatMap((part) => {
+        const bits = part.split(",");
+        const lat = Number(bits[0]);
+        const lng = Number(bits[1]);
+        const peer = bits[2] ?? "";
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || !peer) return [];
+        return [{ at: { lat, lng }, peer, show: bits[3] !== "0" }];
+      });
       lines.push({
-        id: crypto.randomUUID(),
+        id: storedId || crypto.randomUUID(),
         kind: isLineKind(kind) ? kind : "line",
         path,
         notes,
@@ -1134,6 +1200,8 @@ export async function parsePlantFile(file: File): Promise<
         hideFootage: dataValue(pm, "hideFootage") === "1",
         labelSize: storedSize === "sm" || storedSize === "lg" ? storedSize : "md",
         name: dataValue(pm, "lineName") || (kind === "road" ? name : ""),
+        splits,
+        dots,
       });
       continue;
     }

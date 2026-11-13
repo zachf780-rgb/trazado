@@ -38,6 +38,12 @@ export function isCableType(value: unknown): value is CableType {
 
 export type LabelSize = "sm" | "md" | "lg";
 
+export interface LineDot {
+  at: LatLng;
+  peer: string;
+  show: boolean;
+}
+
 export interface LineFeature {
   id: string;
   kind: LineKind;
@@ -60,6 +66,8 @@ export interface LineFeature {
   hideFootage: boolean;
   labelSize: LabelSize;
   name: string;
+  splits: LatLng[];
+  dots: LineDot[];
 }
 
 export type LabelSide = "top" | "bottom" | "left" | "right";
@@ -118,7 +126,7 @@ export type Selection =
   | { type: "overlay"; id: string };
 
 export type Draft =
-  | { mode: "line"; kind: LineKind; path: LatLng[] }
+  | { mode: "line"; kind: LineKind; path: LatLng[]; declined: { lineId: string; at: LatLng }[]; pending: { at: LatLng; targetId: string; kind: "end" | "cross"; showDot: boolean }[] }
   | { mode: "polygon"; path: LatLng[] }
   | { mode: "overlay"; name: string; dataUrl: string; a: LatLng | null };
 
