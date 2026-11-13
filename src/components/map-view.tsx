@@ -45,7 +45,7 @@ const SAT_LABELS = L.tileLayer(
   { maxZoom: 23, maxNativeZoom: 19, attribution: "" },
 );
 
-function footageIcon(footage: string, detail: string, color: string, plate = false, glow = false, size: "sm" | "md" | "lg" = "md"): L.DivIcon {
+function footageIcon(footage: string, detail: string, color: string, plate = false, glow = false, size: "xs" | "sm" | "md" | "lg" = "sm"): L.DivIcon {
   const extra = detail
     ? `<span class="footage-detail">${escapeHtml(detail)}</span>`
     : "";
@@ -847,7 +847,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
           const mid = pathMidpoint(line.path);
           if (mid) {
             L.marker([mid.lat, mid.lng], {
-              icon: footageIcon(line.remove ? `remove ${roadName}` : roadName, "", "#e4e4e7", labelPlate, false, line.labelSize || "md"),
+              icon: footageIcon(line.remove ? `remove ${roadName}` : roadName, "", "#e4e4e7", labelPlate, false, line.labelSize || "sm"),
               interactive: false,
               keyboard: false,
               zIndexOffset: 400,
@@ -862,7 +862,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         const offsetFt = mid ? Math.max(8, haversineFeet(mid, { lat: shifted.lat, lng: shifted.lng })) : 8;
         const line1At = line.parallel ? offsetBeside(span.labelAt, span.from, span.to, offsetFt * 0.35, -1) : span.labelAt;
         L.marker([line1At.lat, line1At.lng], {
-          icon: footageIcon(parts.footage, span.showCable ? parts.detail : "", preset.color, labelPlate, false, line.labelSize || "md"),
+          icon: footageIcon(parts.footage, span.showCable ? parts.detail : "", preset.color, labelPlate, false, line.labelSize || "sm"),
           interactive: false,
           keyboard: false,
           zIndexOffset: 400,
@@ -881,7 +881,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
           if (tag1) {
             const at = offsetBeside(frame1.at, frame1.from, frame1.to, offsetFt * 0.35, -1);
             L.marker([at.lat, at.lng], {
-              icon: footageIcon(tag1, "", preset.color, labelPlate, true, line.labelSize || "md"),
+              icon: footageIcon(tag1, "", preset.color, labelPlate, true, line.labelSize || "sm"),
               interactive: false,
               keyboard: false,
               zIndexOffset: 390,
@@ -890,7 +890,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
           if (tag2) {
             const at = offsetBeside(frame2.at, frame2.from, frame2.to, offsetFt, 1);
             L.marker([at.lat, at.lng], {
-              icon: footageIcon(tag2, "", tintHex(preset.color, 0.42), labelPlate, true, line.labelSize || "md"),
+              icon: footageIcon(tag2, "", tintHex(preset.color, 0.42), labelPlate, true, line.labelSize || "sm"),
               interactive: false,
               keyboard: false,
               zIndexOffset: 390,

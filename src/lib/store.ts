@@ -48,6 +48,7 @@ interface PlantState extends PlantProject {
   labelPlate: boolean;
   setLabelPlate: (labelPlate: boolean) => void;
   labelSize: LabelSize;
+  fontStep: number;
   setLabelSize: (labelSize: LabelSize) => void;
   past: Snapshot[];
   future: Snapshot[];
@@ -202,7 +203,7 @@ function clampOpacity(value: unknown, fallback: number): number {
 }
 
 function isLabelSize(value: unknown): value is LabelSize {
-  return value === "sm" || value === "md" || value === "lg";
+  return value === "xs" || value === "sm" || value === "md" || value === "lg";
 }
 
 function isLatLng(value: unknown): value is LatLng {
@@ -233,7 +234,7 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
       footageText: typeof line.footageText === "string" ? line.footageText : "",
       hideLegend: line.hideLegend === true,
       hideFootage: line.hideFootage === true,
-      labelSize: isLabelSize(line.labelSize) ? line.labelSize : "md",
+      labelSize: isLabelSize(line.labelSize) ? line.labelSize : "sm",
       name: typeof line.name === "string" ? line.name : "",
       splits: Array.isArray(line.splits) ? line.splits.filter(isLatLng) : [],
       dots: Array.isArray(line.dots)
@@ -345,13 +346,23 @@ export const usePlantStore = create<PlantState>()(
       lineSnap: null,
       placeSmall: false,
       labelPlate: false,
-      labelSize: "md",
+      labelSize: "sm",
+      fontStep: 1,
       past: [],
       future: [],
 
       markHydrated: () => {
-        const clean = sanitizeProject(get());
-        set({ ...clean, hydrated: true, draft: null, selection: null });
+        const s = get();
+        const clean = sanitizeProject(s);
+        const reset = s.fontStep !== 1;
+        set({
+          ...clean,
+          hydrated: true,
+          draft: null,
+          selection: null,
+          fontStep: 1,
+          labelSize: reset ? "sm" : isLabelSize(s.labelSize) ? s.labelSize : "sm",
+        });
       },
       setTool: (tool) =>
         set({
@@ -602,7 +613,7 @@ export const usePlantStore = create<PlantState>()(
             footageText: "",
             hideLegend: false,
             hideFootage: false,
-            labelSize: isLabelSize(s.labelSize) ? s.labelSize : "md",
+            labelSize: isLabelSize(s.labelSize) ? s.labelSize : "sm",
             name: "",
             splits: [],
             dots: d.pending.map((join) => ({ at: join.at, peer: join.targetId, show: join.showDot })),
@@ -833,6 +844,7 @@ export const usePlantStore = create<PlantState>()(
         view: s.view,
         labelPlate: s.labelPlate,
         labelSize: s.labelSize,
+        fontStep: s.fontStep,
       }),
     },
   ),

@@ -410,7 +410,7 @@ function outlinedLabelDataUrl(text: string, color: string, plate: boolean): { ur
 }
 
 function geIconScale(w: number, h: number, fontSize: number, size: LabelSize): number {
-  const target = size === "lg" ? 22 : size === "sm" ? 12 : 16;
+  const target = size === "lg" ? 22 : size === "md" ? 16 : size === "sm" ? 12 : 9;
   const scale = (target / fontSize) * (Math.min(w, h) / 32);
   return Math.max(0.2, Math.round(scale * 100) / 100);
 }
@@ -646,7 +646,7 @@ ${slashXml(slashMarks(path))}`;
             const shownFeet = spanShownFeet(span.feet, measured, shown);
             const parts = spanParts(shownFeet, line);
             const hex = preset?.color ?? "#d4d4d8";
-            const size = line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
+            const size = line.labelSize === "xs" || line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
             const stacked = span.showCable && parts.detail ? `${parts.footage}\n${parts.detail}` : parts.footage;
             const footage = textMark(stacked, span.labelAt, hex, size);
             if (!line.parallel) return footage;
@@ -661,7 +661,7 @@ ${slashXml(slashMarks(path))}`;
                 .map((span) => {
                   const hex = preset?.color ?? "#d4d4d8";
                   const twinHex = tintHex(hex, 0.42);
-                  const size = line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
+                  const size = line.labelSize === "xs" || line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
                   const frame1 = pathFrame(span.slice, 0.42);
                   const frame2 = pathFrame(span.slice, 0.58);
                   const tag1 = slotCableTag(line, 1);
@@ -741,7 +741,7 @@ ${slashXml(slashMarks(path))}`;
           ? (() => {
               const mid = pathMidpoint(line.path);
               if (!mid) return "";
-              return textMark(visibleLine, mid, "#e4e4e7", line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md");
+              return textMark(visibleLine, mid, "#e4e4e7", line.labelSize === "xs" || line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md");
             })()
           : "";
         const joinDots = (line.dots ?? [])
@@ -1233,7 +1233,7 @@ export async function parsePlantFile(file: File): Promise<
         footageText: dataValue(pm, "footageText"),
         hideLegend: dataValue(pm, "hideLegend") === "1",
         hideFootage: dataValue(pm, "hideFootage") === "1",
-        labelSize: storedSize === "sm" || storedSize === "lg" ? storedSize : "md",
+        labelSize: storedSize === "xs" || storedSize === "sm" || storedSize === "lg" ? storedSize : "md",
         name: dataValue(pm, "lineName") || (kind === "road" ? name : ""),
         splits,
         dots,

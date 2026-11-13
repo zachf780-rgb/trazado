@@ -1098,11 +1098,11 @@ function Inspector({ line, point, polygon, overlay }) {
 							className: "mr-1 text-xs text-muted-foreground",
 							children: "Font"
 						}),
-						[["sm", "S"], ["md", "M"], ["lg", "L"]].map(([size, label]) => /* @__PURE__ */ jsx("button", {
+						[["xs", "XS"], ["sm", "S"], ["md", "M"], ["lg", "L"]].map(([size, label]) => /* @__PURE__ */ jsx("button", {
 							type: "button",
-							className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", (line.labelSize || "md") === size ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
+							className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", (line.labelSize || "sm") === size ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
 							onClick: () => {
-								const next = size === "sm" || size === "lg" ? size : "md";
+								const next = size === "xs" || size === "sm" || size === "lg" ? size : "md";
 								usePlantStore.getState().setLabelSize(next);
 								usePlantStore.getState().updateLine(line.id, { labelSize: next });
 							},
