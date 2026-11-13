@@ -19,6 +19,8 @@ import {
   joinMask,
   offsetBeside,
   squareLine2,
+  objectSpans,
+  pathFrame,
   slotCableTag,
   spanParts,
   slashMarks,
@@ -859,32 +861,41 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         const shifted = map.containerPointToLatLng(L.point(origin.x + 8, origin.y));
         const offsetFt = mid ? Math.max(8, haversineFeet(mid, { lat: shifted.lat, lng: shifted.lng })) : 8;
         const line1At = line.parallel ? offsetBeside(span.labelAt, span.from, span.to, offsetFt * 0.35, -1) : span.labelAt;
-        const cable1At = offsetBeside(span.cableAt, span.from, span.to, offsetFt * 0.35, -1);
-        const cable2At = offsetBeside(span.cableAt2, span.from, span.to, offsetFt, 1);
         L.marker([line1At.lat, line1At.lng], {
-          icon: footageIcon(parts.footage, parts.detail, preset.color, labelPlate, false, line.labelSize || "md"),
+          icon: footageIcon(parts.footage, span.showCable ? parts.detail : "", preset.color, labelPlate, false, line.labelSize || "md"),
           interactive: false,
           keyboard: false,
           zIndexOffset: 400,
         }).addTo(group);
-        if (!line.parallel) continue;
-        const tag1 = slotCableTag(line, 1);
-        const tag2 = slotCableTag(line, 2);
-        if (tag1) {
-          L.marker([cable1At.lat, cable1At.lng], {
-            icon: footageIcon(tag1, "", preset.color, labelPlate, true, line.labelSize || "md"),
-            interactive: false,
-            keyboard: false,
-            zIndexOffset: 390,
-          }).addTo(group);
-        }
-        if (tag2) {
-          L.marker([cable2At.lat, cable2At.lng], {
-            icon: footageIcon(tag2, "", tintHex(preset.color, 0.42), labelPlate, true, line.labelSize || "md"),
-            interactive: false,
-            keyboard: false,
-            zIndexOffset: 390,
-          }).addTo(group);
+      }
+      if (line.kind !== "road" && line.parallel) {
+        for (const span of objectSpans(line.path, gearPoints(points))) {
+          const tag1 = slotCableTag(line, 1);
+          const tag2 = slotCableTag(line, 2);
+          const mid = span.slice[Math.floor(span.slice.length / 2)] ?? span.from;
+          const origin = map.latLngToContainerPoint([mid.lat, mid.lng]);
+          const shifted = map.containerPointToLatLng(L.point(origin.x + 8, origin.y));
+          const offsetFt = Math.max(8, haversineFeet(mid, { lat: shifted.lat, lng: shifted.lng }));
+          const frame1 = pathFrame(span.slice, 0.42);
+          const frame2 = pathFrame(span.slice, 0.58);
+          if (tag1) {
+            const at = offsetBeside(frame1.at, frame1.from, frame1.to, offsetFt * 0.35, -1);
+            L.marker([at.lat, at.lng], {
+              icon: footageIcon(tag1, "", preset.color, labelPlate, true, line.labelSize || "md"),
+              interactive: false,
+              keyboard: false,
+              zIndexOffset: 390,
+            }).addTo(group);
+          }
+          if (tag2) {
+            const at = offsetBeside(frame2.at, frame2.from, frame2.to, offsetFt, 1);
+            L.marker([at.lat, at.lng], {
+              icon: footageIcon(tag2, "", tintHex(preset.color, 0.42), labelPlate, true, line.labelSize || "md"),
+              interactive: false,
+              keyboard: false,
+              zIndexOffset: 390,
+            }).addTo(group);
+          }
         }
       }
       if (selected) {

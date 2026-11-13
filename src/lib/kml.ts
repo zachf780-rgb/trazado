@@ -34,7 +34,7 @@ import {
   pedestalDir,
   vaultColor,
 } from "./presets";
-import { footageSpans, formatFeet, joinMask, parallelPath, offsetBeside, pathFootage, pathMidpoint, reportedFeet, spanShownFeet, squareLine2, pointSlashMarks, slashMarks, slotCableTag, spanParts } from "./geo";
+import { footageSpans, formatFeet, joinMask, parallelPath, offsetBeside, objectSpans, pathFrame, pathFootage, pathMidpoint, reportedFeet, spanShownFeet, squareLine2, pointSlashMarks, slashMarks, slotCableTag, spanParts } from "./geo";
 import { blobToDataUrl, dataUrlToBytes, pedestalIconDataUrl, pointIconDataUrl, poleVariantDataUrl, vaultIconDataUrl } from "./icons";
 
 function coord(ll: LatLng): string {
@@ -646,23 +646,35 @@ ${slashXml(slashMarks(path))}`;
             const shownFeet = spanShownFeet(span.feet, measured, shown);
             const parts = spanParts(shownFeet, line);
             const hex = preset?.color ?? "#d4d4d8";
-            const twinHex = tintHex(hex, 0.42);
             const size = line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
-            const stacked = parts.detail ? `${parts.footage}\n${parts.detail}` : parts.footage;
+            const stacked = span.showCable && parts.detail ? `${parts.footage}\n${parts.detail}` : parts.footage;
             const footage = textMark(stacked, span.labelAt, hex, size);
             if (!line.parallel) return footage;
-            const cableMark = (name: string, at: LatLng, paint: string) =>
-              name ? textMark(name, at, paint, size) : "";
             const footageAt = offsetBeside(span.labelAt, span.from, span.to, 4, -1);
-            return [
-              footage.replace(coord(span.labelAt), coord(footageAt)),
-              cableMark(slotCableTag(line, 1), offsetBeside(span.cableAt, span.from, span.to, 4, -1), hex),
-              cableMark(slotCableTag(line, 2), offsetBeside(span.cableAt2, span.from, span.to, 12, 1), twinHex),
-            ]
-              .filter(Boolean)
-              .join("\n");
+            return footage.replace(coord(span.labelAt), coord(footageAt));
           })
           .join("\n");
+        const cableLabels =
+          line.kind === "road" || !line.parallel
+            ? ""
+            : objectSpans(line.path, gear)
+                .map((span) => {
+                  const hex = preset?.color ?? "#d4d4d8";
+                  const twinHex = tintHex(hex, 0.42);
+                  const size = line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
+                  const frame1 = pathFrame(span.slice, 0.42);
+                  const frame2 = pathFrame(span.slice, 0.58);
+                  const tag1 = slotCableTag(line, 1);
+                  const tag2 = slotCableTag(line, 2);
+                  return [
+                    tag1 ? textMark(tag1, offsetBeside(frame1.at, frame1.from, frame1.to, 4, -1), hex, size) : "",
+                    tag2 ? textMark(tag2, offsetBeside(frame2.at, frame2.from, frame2.to, 12, 1), twinHex, size) : "",
+                  ]
+                    .filter(Boolean)
+                    .join("\n");
+                })
+                .filter(Boolean)
+                .join("\n");
         const canJoin = line.joinEnds && joinsAtEnds(line.kind);
         const targets = project.points
           .filter((p) => p.kind === "pedestal" || p.kind === "vault" || p.kind === "mdu" || p.kind === "pole")
@@ -774,6 +786,7 @@ ${twinMark}
 ${removal}
 ${roadLabel}
 ${labels}
+${cableLabels}
 ${joinDots}`;
       })
       .join("\n");
