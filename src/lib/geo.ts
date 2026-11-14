@@ -1414,9 +1414,9 @@ function formatDbRange(low: number, high: number): string {
 }
 
 export function lineLossParts(
-  line: Pick<LineFeature, "path" | "kind" | "parallel" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2">,
+  line: Pick<LineFeature, "path" | "kind" | "parallel" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "overrideFootage" | "footageText">,
 ): { label: string; feet: number; db: number; text?: string }[] {
-  const feet = pathFootage(line.path);
+  const feet = reportedFeet(line);
   if (feet <= 0) return [];
   const parts: { label: string; feet: number; db: number; text?: string }[] = [];
   const seen = new Set<string>();
@@ -1446,7 +1446,7 @@ export function lineLossParts(
 }
 
 export function lineLossNote(
-  line: Pick<LineFeature, "path" | "kind" | "parallel" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2">,
+  line: Pick<LineFeature, "path" | "kind" | "parallel" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "overrideFootage" | "footageText">,
 ): string {
   return lineLossParts(line)
     .map((part) => `${part.label} ${part.text ?? formatDb(part.db)}`)

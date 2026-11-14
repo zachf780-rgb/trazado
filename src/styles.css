@@ -182,46 +182,30 @@
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.95);
 }
 
-.footage-label.size-xs .footage-stack {
-  font-size: 6px;
-}
-
-.footage-label.size-sm .footage-stack {
-  font-size: 7px;
-}
-
-.footage-label.size-md .footage-stack {
-  font-size: 8px;
-}
-
-.footage-label.size-lg .footage-stack {
-  font-size: 10px;
-}
-
-.footage-label.size-xs .footage-detail,
-.footage-label.size-xs.glow .footage-feet,
-.footage-label.size-xs.glow .footage-detail {
+.footage-label.size-xs .footage-stack,
+.footage-label.size-xs .footage-feet,
+.footage-label.size-xs .footage-detail {
   font-size: 6px;
   -webkit-text-stroke: 1.6px #fff;
 }
 
-.footage-label.size-sm .footage-detail,
-.footage-label.size-sm.glow .footage-feet,
-.footage-label.size-sm.glow .footage-detail {
+.footage-label.size-sm .footage-stack,
+.footage-label.size-sm .footage-feet,
+.footage-label.size-sm .footage-detail {
   font-size: 8px;
   -webkit-text-stroke: 2px #fff;
 }
 
-.footage-label.size-md .footage-detail,
-.footage-label.size-md.glow .footage-feet,
-.footage-label.size-md.glow .footage-detail {
+.footage-label.size-md .footage-stack,
+.footage-label.size-md .footage-feet,
+.footage-label.size-md .footage-detail {
   font-size: 9px;
   -webkit-text-stroke: 2.2px #fff;
 }
 
-.footage-label.size-lg .footage-detail,
-.footage-label.size-lg.glow .footage-feet,
-.footage-label.size-lg.glow .footage-detail {
+.footage-label.size-lg .footage-stack,
+.footage-label.size-lg .footage-feet,
+.footage-label.size-lg .footage-detail {
   font-size: 12px;
   -webkit-text-stroke: 3px #fff;
 }
@@ -229,16 +213,7 @@
 .footage-label .footage-feet,
 .footage-label .footage-detail {
   display: block;
-  -webkit-text-stroke: 3px #fff;
   paint-order: stroke fill;
-}
-
-.footage-label .footage-detail,
-.footage-label.glow .footage-feet,
-.footage-label.glow .footage-detail {
-  font-size: 12px;
-  font-weight: 700;
-  -webkit-text-stroke: 3.5px #fff;
 }
 
 .footage-label .footage-detail {
