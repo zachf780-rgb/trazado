@@ -40,6 +40,19 @@ export type LabelSize = "xs" | "sm" | "md" | "lg";
 
 export type PipeRole = "ug" | "width" | "share";
 
+export type AerialOp = "de" | "re" | "ol";
+export type AerialMode = "new" | "work";
+
+export interface CableWork {
+  op: AerialOp | "";
+  existing: boolean;
+  wreck: boolean;
+}
+
+export function isAerialOp(value: unknown): value is AerialOp {
+  return value === "de" || value === "re" || value === "ol";
+}
+
 export interface LineDot {
   at: LatLng;
   peer: string;
@@ -73,6 +86,13 @@ export interface LineFeature {
   pipeRoles: PipeRole[];
   occupied: boolean;
   hideSpan: boolean;
+  aerialMode: AerialMode;
+  strandOnly: boolean;
+  workOps: AerialOp[];
+  cableWork: CableWork[];
+  wreckOut: boolean;
+  callout: boolean;
+  calloutDirs: number[];
 }
 
 export type LabelSide = "top" | "bottom" | "left" | "right";

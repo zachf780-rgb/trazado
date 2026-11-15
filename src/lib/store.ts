@@ -15,7 +15,7 @@ import type {
   CableType,
   SlotChoice,
 } from "./types";
-import { EMPTY_PROJECT, LINE_KINDS, CABLE_IDS, isCableType } from "./types";
+import { EMPTY_PROJECT, LINE_KINDS, CABLE_IDS, isAerialOp, isCableType, type CableWork, type LineKind } from "./types";
 import { uid } from "./utils";
 import { constrainCardinal, haversineFeet, lineLossNote, normalizeBox, notesWithLoss } from "./geo";
 import { defaultPointName, allowedCables, allowsEmpty, canResize, isLineKind, isPedType, isPipeRole, isPointKind, isSnapTarget, isVaultType, pedestalDir } from "./presets";
@@ -81,7 +81,7 @@ interface PlantState extends PlantProject {
   updateLine: (
     id: string,
     patch: Partial<
-      Pick<LineFeature, "notes" | "name" | "parallel" | "joinEnds" | "intoSlot" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "emptyPipe" | "remove" | "fiberUnit" | "overrideFootage" | "footageText" | "hideLegend" | "hideFootage" | "labelSize" | "pipeRoles" | "occupied" | "hideSpan">
+      Pick<LineFeature, "notes" | "name" | "parallel" | "joinEnds" | "intoSlot" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "emptyPipe" | "remove" | "fiberUnit" | "overrideFootage" | "footageText" | "hideLegend" | "hideFootage" | "labelSize" | "pipeRoles" | "occupied" | "hideSpan" | "aerialMode" | "strandOnly" | "workOps" | "cableWork" | "wreckOut" | "callout" | "calloutDirs">
     >,
   ) => void;
   updatePoint: (id: string, patch: Partial<Pick<PointFeature, "name" | "description" | "labelSide" | "riser" | "anchors" | "remove" | "hideLegend" | "pedType" | "pedRotate" | "vaultType" | "size">>) => void;
@@ -166,6 +166,41 @@ function cableFields(line: Partial<LineFeature> & { cable?: unknown }): Pick<
   };
 }
 
+function aerialFields(line: Partial<LineFeature> & { kind: LineKind; calloutDir?: number }): Pick<LineFeature, "kind" | "aerialMode" | "strandOnly" | "workOps" | "cableWork" | "wreckOut" | "callout" | "calloutDirs"> {
+  let kind: LineKind = line.kind;
+  let aerialMode: LineFeature["aerialMode"] = line.aerialMode === "work" ? "work" : "new";
+  let workOps = Array.isArray(line.workOps) ? line.workOps.filter(isAerialOp) : [];
+  if (kind === "aerial-overlash") {
+    kind = "aerial-new";
+    aerialMode = "work";
+    if (workOps.length === 0) workOps = ["ol"];
+  }
+  const cableWork: CableWork[] = Array.isArray(line.cableWork)
+    ? line.cableWork.map((item) => ({
+        op: item && isAerialOp(item.op) ? item.op : "",
+        existing: item ? item.existing !== false : true,
+        wreck: item?.wreck === true,
+      }))
+    : [];
+  const hasCable = (Array.isArray(line.cables) && line.cables.length > 0) || isCableType(line.slot1) || isCableType(line.slot2);
+  const strandOnly = aerialMode === "new" && line.strandOnly === true && !hasCable;
+  const fromList = Array.isArray(line.calloutDirs) ? line.calloutDirs : line.calloutDir != null ? [line.calloutDir] : [];
+  const calloutDirs = fromList.map((value) => {
+    const n = Math.round(Number(value));
+    return Number.isFinite(n) ? ((n % 8) + 8) % 8 : 0;
+  });
+  return {
+    kind,
+    aerialMode,
+    strandOnly,
+    workOps,
+    cableWork,
+    wreckOut: line.wreckOut === true,
+    callout: line.callout === true,
+    calloutDirs,
+  };
+}
+
 function stampLoss(line: LineFeature): LineFeature {
   return { ...line, notes: notesWithLoss(line.notes, lineLossNote(line)) };
 }
@@ -220,7 +255,6 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
     if (path.length < 2) continue;
     lines.push(stampLoss({
       id: typeof line.id === "string" ? line.id : uid(),
-      kind: line.kind,
       path,
       notes: typeof line.notes === "string" ? line.notes : "",
       parallel: line.parallel === true,
@@ -245,6 +279,7 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
       pipeRoles: Array.isArray(line.pipeRoles) ? line.pipeRoles.filter(isPipeRole) : [],
       occupied: line.occupied === true,
       hideSpan: line.hideSpan === true,
+      ...aerialFields(line),
     }));
   }
   const points: PointFeature[] = [];
@@ -620,6 +655,13 @@ export const usePlantStore = create<PlantState>()(
             pipeRoles: [],
             occupied: false,
             hideSpan: false,
+            aerialMode: "new",
+            strandOnly: false,
+            workOps: [],
+            cableWork: [],
+            wreckOut: false,
+            callout: false,
+            calloutDirs: [],
           });
           const lines = s.lines.map((existing) => {
             const joins = d.pending.filter((join) => join.targetId === existing.id);

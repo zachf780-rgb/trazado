@@ -1,4 +1,4 @@
-import { isCableType, type CableType, type LatLng, type LineFeature, type LineKind } from "./types";
+import { isAerialOp, isCableType, type CableType, type LatLng, type LineFeature, type LineKind } from "./types";
 
 const EARTH_M = 6371008.8;
 const FT_PER_M = 3.280839895;
@@ -272,6 +272,37 @@ export function bearingDeg(a: LatLng, b: LatLng): number {
     Math.cos(toRad(a.lat)) * Math.sin(toRad(b.lat)) -
     Math.sin(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.cos(toRad(b.lng - a.lng));
   return (Math.atan2(y, x) * 180) / Math.PI;
+}
+
+export function readableRotation(bearing: number): number {
+  let css = bearing - 90;
+  css = ((css % 360) + 360) % 360;
+  if (css > 180) css -= 360;
+  if (css > 90) css -= 180;
+  else if (css < -90) css += 180;
+  return Math.round(css * 10) / 10;
+}
+
+export function labelCss(from: LatLng, to: LatLng, spanFeet: number, text: string, size: "xs" | "sm" | "md" | "lg"): number {
+  const per = size === "lg" ? 14 : size === "md" ? 11 : size === "sm" ? 9 : 7;
+  const bearing = bearingDeg(from, to);
+  return readableRotation(spanFeet >= Math.max(text.length, 1) * per ? bearing : bearing + 90);
+}
+
+export function calloutAt(at: LatLng, dir: number, feet = 46): LatLng {
+  const heading = ((((Math.round(dir) % 8) + 8) % 8) * 45 * Math.PI) / 180;
+  const north = (feet / FT_PER_M / EARTH_M) * (180 / Math.PI);
+  return {
+    lat: at.lat + north * Math.cos(heading),
+    lng: at.lng + (north * Math.sin(heading)) / Math.max(0.2, Math.cos(toRad(at.lat))),
+  };
+}
+
+export function spanCalloutDir(dirs: number[] | undefined, index: number): number {
+  const raw = dirs?.[index];
+  const n = Math.round(Number(raw ?? 0));
+  if (!Number.isFinite(n)) return 0;
+  return ((n % 8) + 8) % 8;
 }
 
 function turnDelta(a: number, b: number): number {
@@ -1347,13 +1378,89 @@ export function cableEntries(
   return line.cables.map((cable) => ({ cable, count: line.fiberCount }));
 }
 
+function groupedTags(tags: string[]): string {
+  const order: string[] = [];
+  const counts = new Map<string, number>();
+  for (const tag of tags) {
+    if (!counts.has(tag)) order.push(tag);
+    counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  }
+  return order
+    .map((tag) => {
+      const n = counts.get(tag) ?? 1;
+      return n > 1 ? `${tag} x${n}` : tag;
+    })
+    .join("/");
+}
+
+function joinCableWords(tags: string[]): string {
+  if (tags.length === 0) return "";
+  if (tags.length === 1) return tags[0] ?? "";
+  if (tags.every((tag) => tag === tags[0])) return `${tags[0]} x${tags.length}`;
+  return tags.join(" and ");
+}
+
+function workLabel(ops: { op: "de" | "re" | "ol"; tag?: string }[]): string {
+  const groups: Record<"de" | "re" | "ol", string[]> = { de: [], re: [], ol: [] };
+  for (const item of ops) groups[item.op].push(item.tag ?? "");
+  const hasDe = groups.de.length > 0;
+  const parts: string[] = [];
+  if (hasDe) parts.push(groups.de.some(Boolean) ? `De ${joinCableWords(groups.de.filter(Boolean))}` : "De");
+  if (groups.re.length > 0) {
+    const word = hasDe ? "Re" : "Lash";
+    parts.push(groups.re.some(Boolean) ? `${word} ${joinCableWords(groups.re.filter(Boolean))}` : word);
+  }
+  if (groups.ol.length > 0) parts.push(groups.ol.some(Boolean) ? `OL ${joinCableWords(groups.ol.filter(Boolean))}` : "OL");
+  return parts.join("/");
+}
+
+function aerialDetail(
+  line: Pick<LineFeature, "kind" | "parallel" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "aerialMode" | "strandOnly" | "workOps" | "cableWork">,
+): string {
+  const entries = cableEntries(line);
+  if (line.aerialMode === "work") {
+    if (entries.length === 0) {
+      const picked = (line.workOps ?? []).filter(isAerialOp);
+      return workLabel(picked.map((op) => ({ op })));
+    }
+    const rows = line.parallel
+      ? ([1, 2] as const).flatMap((slot) => {
+          const id = slot === 1 ? line.slot1 : line.slot2;
+          const raw = line.cableWork?.[slot - 1]?.op;
+          const op = isAerialOp(raw) ? raw : "re";
+          if (!isCableType(id) || !isAerialOp(op)) return [];
+          const count = slot === 1 ? line.fiberCount : line.fiberCount2;
+          return [{ op, tag: cableTag(id, count) }];
+        })
+      : entries.flatMap((entry, index) => {
+          const raw = line.cableWork?.[index]?.op;
+          if (!isCableType(entry.cable)) return [];
+          const op = isAerialOp(raw) ? raw : "re";
+          if (!isAerialOp(op)) return [];
+          return [{ op, tag: cableTag(entry.cable, entry.count) }];
+        });
+    return workLabel(rows);
+  }
+  if (line.strandOnly && entries.length === 0) return "strand only";
+  const bundle = entries.length >= 2 && entries.some((entry) => entry.cable === "fiber") && entries.some((entry) => entry.cable !== "fiber");
+  return groupedTags(entries.map((entry) => {
+    const tag = cableTag(entry.cable, entry.count);
+    return bundle && entry.cable === "fiber" ? `OL ${tag}` : tag;
+  }));
+}
+
 export function spanParts(
   feet: number,
   line: Pick<
     LineFeature,
-    "parallel" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "emptyPipe" | "remove" | "kind" | "fiberUnit"
+    "parallel" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "emptyPipe" | "remove" | "kind" | "fiberUnit" | "aerialMode" | "strandOnly" | "workOps" | "cableWork"
   >,
 ): { footage: string; detail: string } {
+  if (line.kind === "aerial-new") {
+    const fiberOnlyLabel = line.fiberUnit === "km" && cableEntries(line).some((entry) => entry.cable === "fiber");
+    const footage = fiberOnlyLabel ? formatKmLabel(feet) : formatFootageLabel(feet);
+    return { footage: line.remove ? `remove ${footage}` : footage, detail: aerialDetail(line) };
+  }
   const tags = cableEntries(line).map((entry) => cableTag(entry.cable, entry.count));
   if (line.emptyPipe && !tags.includes("empty")) tags.push("empty");
   const order: string[] = [];
@@ -1390,6 +1497,10 @@ export function spanLabel(
     | "remove"
     | "kind"
     | "fiberUnit"
+    | "aerialMode"
+    | "strandOnly"
+    | "workOps"
+    | "cableWork"
   >,
 ): string {
   const { footage, detail } = spanParts(feet, line);

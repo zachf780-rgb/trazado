@@ -15,6 +15,7 @@ import { escapeXml } from "./utils";
 import {
   ALL_LINE_PRESETS,
   ALL_POINT_PRESETS,
+  linePaint,
   lineWidth,
   pointIconScale,
   isLineKind,
@@ -34,7 +35,7 @@ import {
   pedestalDir,
   vaultColor,
 } from "./presets";
-import { footageSpans, formatFeet, joinMask, parallelPath, offsetBeside, objectSpans, pathFrame, pathFootage, pathMidpoint, reportedFeet, spanShownFeet, squareLine2, pointSlashMarks, slashMarks, slotCableTag, spanParts } from "./geo";
+import { footageSpans, formatFeet, joinMask, parallelPath, offsetBeside, objectSpans, pathFrame, pathFootage, pathMidpoint, reportedFeet, spanShownFeet, squareLine2, pointSlashMarks, slashMarks, slotCableTag, spanParts, calloutAt, labelCss, spanCalloutDir } from "./geo";
 import { blobToDataUrl, dataUrlToBytes, pedestalIconDataUrl, pointIconDataUrl, poleVariantDataUrl, vaultIconDataUrl } from "./icons";
 
 function coord(ll: LatLng): string {
@@ -131,12 +132,12 @@ function drawGlyph(
 }
 
 function legendPng(lines: LineFeature[], points: PointFeature[]): string {
-  const { footage, removeFootage, counts, usedLines, removeLines, usedPoints, addPipe, pullOccupied, cables, risers, anchors, peds, vaults } = plantTotals(
+  const { footage, removeFootage, counts, usedLines, removeLines, usedPoints, addPipe, pullOccupied, delash, wreck, cables, risers, anchors, peds, vaults } = plantTotals(
     lines,
     points,
   );
   const pointRows = usedPoints.length + peds.length + vaults.length + (risers > 0 ? 1 : 0) + (anchors > 0 ? 1 : 0);
-  if (usedLines.length === 0 && removeLines.length === 0 && pointRows === 0 && cables.length === 0 && addPipe === 0 && pullOccupied === 0) return "";
+  if (usedLines.length === 0 && removeLines.length === 0 && pointRows === 0 && cables.length === 0 && addPipe === 0 && pullOccupied === 0 && delash === 0 && wreck === 0) return "";
 
   const w = 260;
   const rowH = 20;
@@ -144,11 +145,13 @@ function legendPng(lines: LineFeature[], points: PointFeature[]): string {
   const titleH = 20;
   const pipeRow = addPipe > 0 ? 1 : 0;
   const occupiedRow = pullOccupied > 0 ? 1 : 0;
+  const delashRow = delash > 0 ? 1 : 0;
+  const wreckRow = wreck > 0 ? 1 : 0;
   const gap = usedLines.length > 0 && pointRows > 0 ? 8 : 0;
   const h =
     pad * 2 +
     titleH +
-    (usedLines.length + removeLines.length + pipeRow + occupiedRow + cables.length) * rowH +
+    (usedLines.length + removeLines.length + pipeRow + occupiedRow + delashRow + wreckRow + cables.length) * rowH +
     gap +
     pointRows * 18;
   const canvas = document.createElement("canvas");
@@ -208,9 +211,50 @@ function legendPng(lines: LineFeature[], points: PointFeature[]): string {
     y += rowH;
   }
 
-  for (const preset of removeLines) {
-    ctx.fillStyle = preset.color;
+  if (delash > 0) {
+    ctx.fillStyle = "#f472b6";
     ctx.fillRect(pad, y - 7, 16, 4);
+    ctx.fillStyle = "#e8eaee";
+    ctx.textAlign = "left";
+    ctx.fillText("Delash", pad + 22, y);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#c8ccd4";
+    ctx.fillText(formatFeet(delash), w - pad, y);
+    ctx.textAlign = "left";
+    y += rowH;
+  }
+
+  if (wreck > 0) {
+    ctx.fillStyle = "#9f1239";
+    ctx.fillRect(pad, y - 7, 16, 4);
+    ctx.fillStyle = "#e8eaee";
+    ctx.textAlign = "left";
+    ctx.fillText("partial wreck out", pad + 22, y);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#c8ccd4";
+    ctx.fillText(formatFeet(wreck), w - pad, y);
+    ctx.textAlign = "left";
+    y += rowH;
+  }
+
+  for (const preset of removeLines) {
+    ctx.save();
+    ctx.lineCap = "butt";
+    ctx.strokeStyle = preset.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(pad, y - 4);
+    ctx.lineTo(pad + 16, y - 4);
+    ctx.stroke();
+    ctx.lineWidth = 1.3;
+    [[3, 4, 6.5, -4], [9, 4, 12.5, -4]].forEach(([x1, y1, x2, y2], index) => {
+      ctx.strokeStyle = index === 0 ? "#dc2626" : "#ffffff";
+      ctx.beginPath();
+      ctx.moveTo(pad + x1, y - 4 + y1);
+      ctx.lineTo(pad + x2, y - 4 + y2);
+      ctx.stroke();
+    });
+    ctx.restore();
     ctx.fillStyle = "#e8eaee";
     ctx.textAlign = "left";
     ctx.fillText(`remove ${preset.short}`, pad + 22, y);
@@ -434,25 +478,28 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
   const pedFiles = new Map<string, string>();
   const vaultFiles = new Map<string, string>();
   const plateFiles = new Map<string, { href: string; w: number; h: number; fontSize: number }>();
-  function artFor(text: string, color: string): { href: string; w: number; h: number; fontSize: number } {
-    const key = `${labelPlate ? "p" : "n"}|${color}|${text}`;
+  function artFor(text: string, color: string, boxed = false): { href: string; w: number; h: number; fontSize: number } {
+    const plate = boxed || labelPlate;
+    const key = `${plate ? "p" : "n"}|${color}|${text}`;
     const hit = plateFiles.get(key);
     if (hit) return hit;
-    const drawn = outlinedLabelDataUrl(text, color, labelPlate);
+    const drawn = outlinedLabelDataUrl(text, color, plate);
     const name = `label-${plateFiles.size + 1}.png`;
     files!.file(name, dataUrlToBytes(drawn.url).bytes);
     const art = { href: `files/${name}`, w: drawn.w, h: drawn.h, fontSize: drawn.fontSize };
     plateFiles.set(key, art);
     return art;
   }
-  function textMark(text: string, at: LatLng, hex: string, size: LabelSize = "md"): string {
-    const art = artFor(text, hex);
+  function textMark(text: string, at: LatLng, hex: string, size: LabelSize = "md", heading = 0, boxed = false): string {
+    const art = artFor(text, hex, boxed);
+    const head = ((heading % 360) + 360) % 360;
     return `      <Placemark>
         <name></name>
         <ExtendedData><Data name="spanLabel"><value>1</value></Data></ExtendedData>
         <Style>
           <IconStyle>
             <scale>${geIconScale(art.w, art.h, art.fontSize, size)}</scale>
+            <heading>${head.toFixed(1)}</heading>
             <hotSpot x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
             <Icon><href>${escapeXml(art.href)}</href></Icon>
           </IconStyle>
@@ -462,6 +509,13 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
           <altitudeMode>clampToGround</altitudeMode>
           <coordinates>${coord(at)}</coordinates>
         </Point>
+      </Placemark>`;
+  }
+  function leaderMark(from: LatLng, to: LatLng, hex: string): string {
+    return `      <Placemark>
+        <name>__callout</name>
+        <Style><LineStyle><color>${hexToKmlColor(hex)}</color><width>1</width></LineStyle></Style>
+        <LineString><tessellate>1</tessellate><coordinates>${coord(from)} ${coord(to)}</coordinates></LineString>
       </Placemark>`;
   }
   const dotFiles = new Map<string, string>();
@@ -521,7 +575,7 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
     overlayHrefs[ov.id] = `files/${name}`;
   });
 
-  const { footage, removeFootage, counts, usedLines, removeLines, usedPoints, addPipe, pullOccupied, cables, risers, anchors, peds, vaults } = plantTotals(
+  const { footage, removeFootage, counts, usedLines, removeLines, usedPoints, addPipe, pullOccupied, delash, wreck, cables, risers, anchors, peds, vaults } = plantTotals(
     project.lines,
     project.points,
   );
@@ -543,6 +597,16 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
     ...(pullOccupied > 0
       ? [
           `<tr><td><font color="#2563eb">Pull occupied</font></td><td align="right">${escapeXml(formatFeet(pullOccupied))}</td></tr>`,
+        ]
+      : []),
+    ...(delash > 0
+      ? [
+          `<tr><td><font color="#f472b6">Delash</font></td><td align="right">${escapeXml(formatFeet(delash))}</td></tr>`,
+        ]
+      : []),
+    ...(wreck > 0
+      ? [
+          `<tr><td><font color="#9f1239">partial wreck out</font></td><td align="right">${escapeXml(formatFeet(wreck))}</td></tr>`,
         ]
       : []),
     ...cables.map(
@@ -642,33 +706,43 @@ ${slashXml(slashMarks(path))}`;
         const shown = reportedFeet(line);
         const spans = footageSpans(line.path, gear, line.splits ?? [], (line.dots ?? []).map((dot) => dot.at));
         const labels = line.kind === "road" ? "" : spans
-          .map((span) => {
+          .map((span, index) => {
             const shownFeet = spanShownFeet(span.feet, measured, shown);
             const parts = spanParts(shownFeet, line);
-            const hex = preset?.color ?? "#d4d4d8";
+            const paint = linePaint(line);
+            const hex = paint;
             const size = line.labelSize === "xs" || line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
             const stacked = span.showCable && parts.detail ? `${parts.footage}\n${parts.detail}` : parts.footage;
-            const footage = textMark(stacked, span.labelAt, hex, size);
+            const cableNote = line.parallel ? [slotCableTag(line, 1), slotCableTag(line, 2)].filter(Boolean).join("/") : "";
+            const boxed = line.callout ? (cableNote ? `${stacked}\n${cableNote}` : stacked) : stacked;
+            if (line.callout) {
+              const at = calloutAt(span.labelAt, spanCalloutDir(line.calloutDirs, index));
+              return `${leaderMark(span.labelAt, at, tintHex(hex, 0.45))}\n${textMark(boxed, at, hex, size, 0, true)}`;
+            }
+            const turn = labelCss(span.from, span.to, shownFeet, stacked.replace("\n", ""), size);
+            const footage = textMark(stacked, span.labelAt, hex, size, turn);
             if (!line.parallel) return footage;
             const footageAt = offsetBeside(span.labelAt, span.from, span.to, 4, -1);
             return footage.replace(coord(span.labelAt), coord(footageAt));
           })
           .join("\n");
         const cableLabels =
-          line.kind === "road" || !line.parallel
+          line.kind === "road" || !line.parallel || line.callout
             ? ""
             : objectSpans(line.path, gear, [...(line.splits ?? []), ...(line.dots ?? []).map((dot) => dot.at)])
                 .map((span) => {
-                  const hex = preset?.color ?? "#d4d4d8";
+                  const paint = linePaint(line);
+                  const hex = paint;
                   const twinHex = tintHex(hex, 0.42);
                   const size = line.labelSize === "xs" || line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
                   const frame1 = pathFrame(span.slice, 0.42);
                   const frame2 = pathFrame(span.slice, 0.58);
                   const tag1 = slotCableTag(line, 1);
                   const tag2 = slotCableTag(line, 2);
+                  const spanFeet = pathFootage(span.slice);
                   return [
-                    tag1 ? textMark(tag1, offsetBeside(frame1.at, frame1.from, frame1.to, 4, -1), hex, size) : "",
-                    tag2 ? textMark(tag2, offsetBeside(frame2.at, frame2.from, frame2.to, 12, 1), twinHex, size) : "",
+                    tag1 ? textMark(tag1, offsetBeside(frame1.at, frame1.from, frame1.to, 4, -1), hex, size, labelCss(frame1.from, frame1.to, spanFeet, tag1, size)) : "",
+                    tag2 ? textMark(tag2, offsetBeside(frame2.at, frame2.from, frame2.to, 12, 1), twinHex, size, labelCss(frame2.from, frame2.to, spanFeet, tag2, size)) : "",
                   ]
                     .filter(Boolean)
                     .join("\n");
@@ -720,6 +794,13 @@ ${slashXml(slashMarks(path))}`;
           (line.pipeRoles ?? []).length > 0 ? `<Data name="pipeRoles"><value>${escapeXml(line.pipeRoles.join(","))}</value></Data>` : "",
           line.occupied ? `<Data name="occupied"><value>1</value></Data>` : "",
           line.hideSpan ? `<Data name="hideSpan"><value>1</value></Data>` : "",
+          line.aerialMode === "work" ? `<Data name="aerialMode"><value>work</value></Data>` : "",
+          line.strandOnly ? `<Data name="strandOnly"><value>1</value></Data>` : "",
+          (line.workOps ?? []).length > 0 ? `<Data name="workOps"><value>${line.workOps.join(",")}</value></Data>` : "",
+          (line.cableWork ?? []).length > 0 ? `<Data name="cableWork"><value>${line.cableWork.map((work) => `${work.op || "-"}:${work.existing ? 1 : 0}:${work.wreck ? 1 : 0}`).join(",")}</value></Data>` : "",
+          line.wreckOut ? `<Data name="wreckOut"><value>1</value></Data>` : "",
+          line.callout ? `<Data name="callout"><value>1</value></Data>` : "",
+          (line.calloutDirs ?? []).length > 0 ? `<Data name="calloutDirs"><value>${line.calloutDirs.join(",")}</value></Data>` : "",
           `<Data name="kind"><value>${line.kind}</value></Data>`,
           `<Data name="id"><value>${escapeXml(line.id)}</value></Data>`,
           (line.splits ?? []).length > 0 ? `<Data name="splits"><value>${(line.splits ?? []).map((at) => `${at.lat},${at.lng}`).join(";")}</value></Data>` : "",
@@ -731,17 +812,24 @@ ${slashXml(slashMarks(path))}`;
         const removal = line.remove ? removalXml(line.path) : "";
         const roadName = line.kind === "road" ? line.name.trim() : "";
         const visibleLine = line.remove && roadName ? `remove ${roadName}` : roadName;
-        const lineStyle = line.kind === "road"
+        const lineStyle = line.kind === "road" || (line.kind === "aerial-new" && line.aerialMode === "work")
           ? `<Style>
-          <LineStyle><color>${labelColor}</color><width>${lineWidth(line.kind)}</width></LineStyle>
+          <LineStyle><color>${line.kind === "road" ? labelColor : "ff7727db"}</color><width>${lineWidth(line.kind)}</width></LineStyle>
           <LabelStyle><scale>0</scale></LabelStyle>
         </Style>`
           : `<styleUrl>#line-${line.kind}</styleUrl>`;
         const roadLabel = visibleLine
           ? (() => {
               const mid = pathMidpoint(line.path);
-              if (!mid) return "";
-              return textMark(visibleLine, mid, "#e4e4e7", line.labelSize === "xs" || line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md");
+              const from = line.path[0];
+              const to = line.path[line.path.length - 1];
+              if (!mid || !from || !to) return "";
+              const size = line.labelSize === "xs" || line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
+              if (line.callout) {
+                const at = calloutAt(mid, spanCalloutDir(line.calloutDirs, 0));
+                return `${leaderMark(mid, at, tintHex("#e4e4e7", 0.35))}\n${textMark(visibleLine, at, "#e4e4e7", size, 0, true)}`;
+              }
+              return textMark(visibleLine, mid, "#e4e4e7", size, labelCss(from, to, pathFootage(line.path), visibleLine, size));
             })()
           : "";
         const joinDots = (line.dots ?? [])
@@ -1184,7 +1272,7 @@ export async function parsePlantFile(file: File): Promise<
     const polyEl = pm.getElementsByTagName("Polygon")[0];
 
     if (lineEl) {
-      if (name === "__parallel" || name === "__bypass") continue;
+      if (name === "__parallel" || name === "__bypass" || name === "__callout") continue;
       const path = parseCoordinates(
         textContent(lineEl.getElementsByTagName("coordinates")[0]),
       );
@@ -1240,6 +1328,20 @@ export async function parsePlantFile(file: File): Promise<
         pipeRoles: dataValue(pm, "pipeRoles").split(",").filter((role): role is "ug" | "width" | "share" => role === "ug" || role === "width" || role === "share"),
         occupied: dataValue(pm, "occupied") === "1",
         hideSpan: dataValue(pm, "hideSpan") === "1",
+        aerialMode: dataValue(pm, "aerialMode") === "work" || kind === "aerial-overlash" ? "work" : "new",
+        strandOnly: dataValue(pm, "strandOnly") === "1",
+        workOps: dataValue(pm, "workOps").split(",").filter((op): op is "de" | "re" | "ol" => op === "de" || op === "re" || op === "ol"),
+        cableWork: dataValue(pm, "cableWork").split(",").filter(Boolean).map((part) => {
+          const [op, existing, wreck] = part.split(":");
+          return {
+            op: op === "de" || op === "re" || op === "ol" ? op : "",
+            existing: existing !== "0",
+            wreck: wreck === "1",
+          };
+        }),
+        wreckOut: dataValue(pm, "wreckOut") === "1",
+        callout: dataValue(pm, "callout") === "1",
+        calloutDirs: (dataValue(pm, "calloutDirs") || dataValue(pm, "calloutDir")).split(",").map((value) => Number(value)).filter((value) => Number.isFinite(value)),
       });
       continue;
     }

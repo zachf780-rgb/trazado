@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { usePlantStore } from "@/lib/store";
-import { canResize, isLineTool, isPointTool, isSnapTarget, joinsAtEnds, lineOpacity, linePreset, lineWidth, objectScale, pedestalDir, pedestalPixels, pointLabelColor, tintHex, vaultPixels } from "@/lib/presets";
+import { canResize, isLineTool, isPointTool, isSnapTarget, joinsAtEnds, lineOpacity, linePaint, linePreset, lineWidth, objectScale, pedestalDir, pedestalPixels, pointLabelColor, tintHex, vaultPixels } from "@/lib/presets";
 import {
   constrainCardinal,
   footageSpans,
@@ -23,6 +23,9 @@ import {
   pathFrame,
   slotCableTag,
   spanParts,
+  calloutAt,
+  spanCalloutDir,
+  readableRotation,
   slashMarks,
 } from "@/lib/geo";
 import { pedestalIconDataUrl, pointIconDataUrl, vaultIconDataUrl } from "@/lib/icons";
@@ -45,17 +48,28 @@ const SAT_LABELS = L.tileLayer(
   { maxZoom: 23, maxNativeZoom: 19, attribution: "" },
 );
 
-function footageIcon(footage: string, detail: string, color: string, plate = false, glow = false, size: "xs" | "sm" | "md" | "lg" = "sm"): L.DivIcon {
+function footageIcon(footage: string, detail: string, color: string, plate = false, glow = false, size: "xs" | "sm" | "md" | "lg" = "sm", rotate = 0): L.DivIcon {
   const extra = detail
     ? `<span class="footage-detail">${escapeHtml(detail)}</span>`
     : "";
   const classes = ["footage-label", plate ? "plate" : "", glow ? "glow" : "", `size-${size}`].filter(Boolean).join(" ");
+  const turn = `transform:translate(-50%,-50%) rotate(${rotate}deg)`;
   return L.divIcon({
     className: classes,
-    html: `<span class="footage-stack" style="color:${color}"><span class="footage-feet">${escapeHtml(footage)}</span>${extra}</span>`,
+    html: `<span class="footage-stack" style="color:${color};${turn}"><span class="footage-feet">${escapeHtml(footage)}</span>${extra}</span>`,
     iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
+}
+
+function labelTurn(map: L.Map, from: LatLng, to: LatLng, text: string, size: string): number {
+  const a = map.latLngToContainerPoint([from.lat, from.lng]);
+  const b = map.latLngToContainerPoint([to.lat, to.lng]);
+  const len = Math.hypot(b.x - a.x, b.y - a.y);
+  const bearing = (Math.atan2(b.x - a.x, a.y - b.y) * 180) / Math.PI;
+  const charW = size === "lg" ? 8 : size === "md" ? 6.4 : size === "sm" ? 5.6 : 4.4;
+  const along = len >= Math.max(text.length, 1) * charW + 8;
+  return readableRotation(along ? bearing : bearing + 90);
 }
 
 function spinOverlay(layer: L.ImageOverlay, degrees: number) {
@@ -284,7 +298,7 @@ function paintParallel(
     L.polyline(
       path.map((p) => [p.lat, p.lng] as [number, number]),
       {
-        color: tintHex(linePreset(line.kind).color, 0.42),
+        color: tintHex(linePaint(line), 0.42),
         weight: lineWidth(line.kind),
         opacity: 1,
         lineJoin: "round",
@@ -324,6 +338,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
   const labelsRef = useRef<L.TileLayer>(SAT_LABELS);
   const draggingRef = useRef(false);
   const touchingRef = useRef(false);
+  const [zoomGen, setZoomGen] = useState(0);
 
   const lines = usePlantStore((s) => s.lines);
   const points = usePlantStore((s) => s.points);
@@ -381,6 +396,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
     searchRef.current = searchLayer;
     parallelRef.current = parallelLayer;
     mapRef.current = map;
+    map.on("zoomend", () => setZoomGen((n) => n + 1));
 
     let gestureUntil = 0;
     const dragMoving = () => Boolean((map.dragging as { moving?: () => boolean }).moving?.());
@@ -767,6 +783,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
 
     for (const line of lines) {
       const preset = linePreset(line.kind);
+      const paint = linePaint(line);
       const selected = selection?.type === "line" && selection.id === line.id;
       const latlngs = line.path.map((p) => [p.lat, p.lng] as [number, number]);
       const hit = L.polyline(latlngs, {
@@ -785,7 +802,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         }).addTo(group);
       }
       const vis = L.polyline(latlngs, {
-        color: preset.color,
+        color: paint,
         weight: width,
         opacity: lineOpacity(line.kind),
         lineJoin: "round",
@@ -843,32 +860,66 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
       const shown = reportedFeet(line);
       if (line.kind === "road") {
         const roadName = line.name.trim();
-        if (roadName) {
+        if (roadName && line.path.length >= 2) {
+          const from = line.path[0]!;
+          const to = line.path[line.path.length - 1]!;
           const mid = pathMidpoint(line.path);
           if (mid) {
-            L.marker([mid.lat, mid.lng], {
-              icon: footageIcon(line.remove ? `remove ${roadName}` : roadName, "", "#e4e4e7", labelPlate, false, line.labelSize || "sm"),
+            const text = line.remove ? `remove ${roadName}` : roadName;
+            const at = line.callout ? calloutAt(mid, spanCalloutDir(line.calloutDirs, 0)) : mid;
+            if (line.callout) {
+              L.polyline([[mid.lat, mid.lng], [at.lat, at.lng]], {
+                color: tintHex("#e4e4e7", 0.35),
+                weight: 1,
+                opacity: 0.95,
+                interactive: false,
+              }).addTo(group);
+            }
+            L.marker([at.lat, at.lng], {
+              icon: footageIcon(text, "", "#e4e4e7", line.callout || labelPlate, false, line.labelSize || "sm", line.callout ? 0 : labelTurn(map, from, to, text, line.labelSize || "sm")),
               interactive: false,
               keyboard: false,
               zIndexOffset: 400,
             }).addTo(group);
           }
         }
-      } else for (const span of footageSpans(line.path, gearPoints(points), line.splits ?? [], (line.dots ?? []).map((dot) => dot.at))) {
+      } else footageSpans(line.path, gearPoints(points), line.splits ?? [], (line.dots ?? []).map((dot) => dot.at)).forEach((span, index) => {
         const parts = spanParts(spanShownFeet(span.feet, measured, shown), line);
+        const size = line.labelSize || "sm";
+        const cableNote = line.parallel
+          ? [slotCableTag(line, 1), slotCableTag(line, 2)].filter(Boolean).join("/")
+          : "";
+        const detail = [span.showCable ? parts.detail : "", line.callout ? cableNote : ""].filter(Boolean).join(" ");
+        const text = `${parts.footage}${detail}`;
+        if (line.callout) {
+          const at = calloutAt(span.labelAt, spanCalloutDir(line.calloutDirs, index));
+          L.polyline([[span.labelAt.lat, span.labelAt.lng], [at.lat, at.lng]], {
+            color: tintHex(paint, 0.45),
+            weight: 1,
+            opacity: 0.95,
+            interactive: false,
+          }).addTo(group);
+          L.marker([at.lat, at.lng], {
+            icon: footageIcon(parts.footage, detail, paint, true, false, size, 0),
+            interactive: false,
+            keyboard: false,
+            zIndexOffset: 400,
+          }).addTo(group);
+          return;
+        }
         const mid = line.path[Math.floor(line.path.length / 2)] ?? line.path[0];
         const origin = mid ? map.latLngToContainerPoint([mid.lat, mid.lng]) : L.point(0, 0);
         const shifted = map.containerPointToLatLng(L.point(origin.x + 8, origin.y));
         const offsetFt = mid ? Math.max(8, haversineFeet(mid, { lat: shifted.lat, lng: shifted.lng })) : 8;
         const line1At = line.parallel ? offsetBeside(span.labelAt, span.from, span.to, offsetFt * 0.35, -1) : span.labelAt;
         L.marker([line1At.lat, line1At.lng], {
-          icon: footageIcon(parts.footage, span.showCable ? parts.detail : "", preset.color, labelPlate, false, line.labelSize || "sm"),
+          icon: footageIcon(parts.footage, span.showCable ? parts.detail : "", paint, labelPlate, false, size, labelTurn(map, span.from, span.to, text, size)),
           interactive: false,
           keyboard: false,
           zIndexOffset: 400,
         }).addTo(group);
-      }
-      if (line.kind !== "road" && line.parallel) {
+      });
+      if (line.kind !== "road" && line.parallel && !line.callout) {
         for (const span of objectSpans(line.path, gearPoints(points), [...(line.splits ?? []), ...(line.dots ?? []).map((dot) => dot.at)])) {
           const tag1 = slotCableTag(line, 1);
           const tag2 = slotCableTag(line, 2);
@@ -881,7 +932,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
           if (tag1) {
             const at = offsetBeside(frame1.at, frame1.from, frame1.to, offsetFt * 0.35, -1);
             L.marker([at.lat, at.lng], {
-              icon: footageIcon(tag1, "", preset.color, labelPlate, true, line.labelSize || "sm"),
+              icon: footageIcon(tag1, "", paint, labelPlate, true, line.labelSize || "sm", labelTurn(map, frame1.from, frame1.to, tag1, line.labelSize || "sm")),
               interactive: false,
               keyboard: false,
               zIndexOffset: 390,
@@ -890,7 +941,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
           if (tag2) {
             const at = offsetBeside(frame2.at, frame2.from, frame2.to, offsetFt, 1);
             L.marker([at.lat, at.lng], {
-              icon: footageIcon(tag2, "", tintHex(preset.color, 0.42), labelPlate, true, line.labelSize || "sm"),
+              icon: footageIcon(tag2, "", tintHex(paint, 0.42), labelPlate, true, line.labelSize || "sm", labelTurn(map, frame2.from, frame2.to, tag2, line.labelSize || "sm")),
               interactive: false,
               keyboard: false,
               zIndexOffset: 390,
@@ -1056,7 +1107,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
 
     const parallel = parallelRef.current;
     if (parallel) paintParallel(map, parallel, lines, points);
-  }, [lines, points, polygons, overlays, selection, tool, labelPlate]);
+  }, [lines, points, polygons, overlays, selection, tool, labelPlate, zoomGen]);
 
   useEffect(() => {
     const group = draftRef.current;
