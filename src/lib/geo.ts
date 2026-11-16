@@ -1397,7 +1397,7 @@ function joinCableWords(tags: string[]): string {
   if (tags.length === 0) return "";
   if (tags.length === 1) return tags[0] ?? "";
   if (tags.every((tag) => tag === tags[0])) return `${tags[0]} x${tags.length}`;
-  return tags.join(" and ");
+  return tags.join(" + ");
 }
 
 function workLabel(ops: { op: "de" | "re" | "ol"; tag?: string }[]): string {
