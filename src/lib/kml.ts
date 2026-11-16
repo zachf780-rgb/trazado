@@ -35,7 +35,7 @@ import {
   pedestalDir,
   vaultColor,
 } from "./presets";
-import { footageSpans, formatFeet, joinMask, parallelPath, offsetBeside, objectSpans, pathFrame, pathFootage, pathMidpoint, reportedFeet, spanShownFeet, squareLine2, pointSlashMarks, slashMarks, slotCableTag, spanParts, calloutAt, labelCss, spanCalloutDir } from "./geo";
+import { footageSpans, formatFeet, joinMask, parallelPath, offsetBeside, objectSpans, pathFrame, pathFootage, pathMidpoint, reportedFeet, spanShownFeet, squareLine2, pointSlashMarks, slashMarks, slotCableTag, spanParts, calloutAt, spanCalloutDir } from "./geo";
 import { blobToDataUrl, dataUrlToBytes, pedestalIconDataUrl, pointIconDataUrl, poleVariantDataUrl, vaultIconDataUrl } from "./icons";
 
 function coord(ll: LatLng): string {
@@ -411,10 +411,9 @@ function legendPng(lines: LineFeature[], points: PointFeature[]): string {
   return canvas.toDataURL("image/png");
 }
 
-function outlinedLabelDataUrl(text: string, color: string, plate: boolean): { url: string; w: number; h: number; fontSize: number } {
+function outlinedLabelDataUrl(text: string, color: string, plate: boolean, fontSize = 64): { url: string; w: number; h: number; fontSize: number } {
   const drawn = text.split("\n").map((line) => line.trim()).filter(Boolean);
   const lines = drawn.length > 0 ? drawn : [text];
-  const fontSize = 64;
   if (typeof document === "undefined") return { url: "", w: 32, h: 32, fontSize };
   const font = `700 ${fontSize}px "IBM Plex Mono", ui-monospace, monospace`;
   const canvas = document.createElement("canvas");
@@ -422,9 +421,9 @@ function outlinedLabelDataUrl(text: string, color: string, plate: boolean): { ur
   if (!ctx) return { url: "", w: 32, h: 32, fontSize };
   ctx.font = font;
   const width = Math.max(...lines.map((line) => ctx.measureText(line).width), 8);
-  const stroke = 12;
-  const padX = stroke + 6;
-  const padY = stroke + 4;
+  const stroke = Math.max(2, Math.round(fontSize * 0.2));
+  const padX = stroke + Math.max(2, Math.round(fontSize * 0.1));
+  const padY = stroke + Math.max(2, Math.round(fontSize * 0.06));
   const lineH = fontSize + stroke;
   const w = Math.ceil(width + padX * 2);
   const h = Math.ceil(lines.length * lineH + padY * 2);
@@ -434,7 +433,7 @@ function outlinedLabelDataUrl(text: string, color: string, plate: boolean): { ur
   if (plate) {
     ctx.fillStyle = "rgba(255,255,255,0.92)";
     ctx.beginPath();
-    ctx.roundRect(4, 4, w - 8, h - 8, 12);
+    ctx.roundRect(2, 2, w - 4, h - 4, Math.max(2, Math.round(fontSize * 0.2)));
     ctx.fill();
   }
   ctx.font = font;
@@ -471,33 +470,27 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
   const poleFiles = new Map<string, string>();
   const pedFiles = new Map<string, string>();
   const vaultFiles = new Map<string, string>();
-  const plateFiles = new Map<string, { href: string; w: number; h: number; fontSize: number }>();
-  function artFor(text: string, color: string, boxed = false): { href: string; w: number; h: number; fontSize: number } {
+  const plateFiles = new Map<string, string>();
+  function textMark(text: string, at: LatLng, hex: string, size: LabelSize = "md", boxed = false): string {
+    const px = size === "lg" ? 12 : size === "md" ? 9 : size === "sm" ? 8 : 6;
     const plate = boxed || labelPlate;
-    const key = `${plate ? "p" : "n"}|${color}|${text}`;
-    const hit = plateFiles.get(key);
-    if (hit) return hit;
-    const drawn = outlinedLabelDataUrl(text, color, plate);
-    const name = `label-${plateFiles.size + 1}.png`;
-    files!.file(name, dataUrlToBytes(drawn.url).bytes);
-    const art = { href: `files/${name}`, w: drawn.w, h: drawn.h, fontSize: drawn.fontSize };
-    plateFiles.set(key, art);
-    return art;
-  }
-  function textMark(text: string, at: LatLng, hex: string, size: LabelSize = "md", heading = 0, boxed = false, flat = true): string {
-    const art = artFor(text, hex, boxed);
-    if (!flat) {
-      const target = size === "lg" ? 12 : size === "md" ? 9 : size === "sm" ? 8 : 6;
-      const scale = Math.max(0.08, Math.round((target / Math.max(art.fontSize, 1)) * 100) / 100);
-      return `      <Placemark>
+    const key = `${px}|${plate ? "p" : "n"}|${hex}|${text}`;
+    let href = plateFiles.get(key);
+    if (!href) {
+      const drawn = outlinedLabelDataUrl(text, hex, plate, px);
+      const name = `label-${plateFiles.size + 1}.png`;
+      files!.file(name, dataUrlToBytes(drawn.url).bytes);
+      href = `files/${name}`;
+      plateFiles.set(key, href);
+    }
+    return `      <Placemark>
         <name></name>
         <ExtendedData><Data name="spanLabel"><value>1</value></Data></ExtendedData>
         <Style>
           <IconStyle>
-            <scale>${scale}</scale>
-            <heading>0</heading>
+            <scale>1</scale>
             <hotSpot x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
-            <Icon><href>${escapeXml(art.href)}</href></Icon>
+            <Icon><href>${escapeXml(href)}</href></Icon>
           </IconStyle>
           <LabelStyle><scale>0</scale></LabelStyle>
         </Style>
@@ -506,28 +499,6 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
           <coordinates>${coord(at)}</coordinates>
         </Point>
       </Placemark>`;
-    }
-    const feet = size === "lg" ? 3.2 : size === "md" ? 2.4 : size === "sm" ? 2.1 : 1.6;
-    const heightM = (art.h / Math.max(art.fontSize, 1)) * (feet / 3.280839895);
-    const widthM = (art.w / Math.max(art.fontSize, 1)) * (feet / 3.280839895);
-    const latRad = (at.lat * Math.PI) / 180;
-    const halfLat = heightM / 2 / 111320;
-    const halfLng = widthM / 2 / (111320 * Math.max(0.2, Math.cos(latRad)));
-    let rotation = -heading;
-    rotation = ((rotation + 180) % 360 + 360) % 360 - 180;
-    return `      <GroundOverlay>
-        <name>__spanlabel</name>
-        <drawOrder>40</drawOrder>
-        <altitudeMode>clampToGround</altitudeMode>
-        <Icon><href>${escapeXml(art.href)}</href></Icon>
-        <LatLonBox>
-          <north>${at.lat + halfLat}</north>
-          <south>${at.lat - halfLat}</south>
-          <east>${at.lng + halfLng}</east>
-          <west>${at.lng - halfLng}</west>
-          <rotation>${rotation.toFixed(2)}</rotation>
-        </LatLonBox>
-      </GroundOverlay>`;
   }
   function leaderMark(from: LatLng, to: LatLng, hex: string): string {
     return `      <Placemark>
@@ -735,11 +706,10 @@ ${slashXml(slashMarks(path))}`;
             const boxed = line.callout ? (cableNote ? `${stacked}\n${cableNote}` : stacked) : stacked;
             if (line.callout) {
               const at = calloutAt(span.labelAt, spanCalloutDir(line.calloutDirs, index));
-              return `${leaderMark(span.labelAt, at, tintHex(hex, 0.45))}\n${textMark(boxed, at, hex, size, 0, true, false)}`;
+              return `${leaderMark(span.labelAt, at, tintHex(hex, 0.45))}\n${textMark(boxed, at, hex, size, true)}`;
             }
-            const turn = labelCss(span.from, span.to, shownFeet, stacked.replace("\n", ""), size);
             const at = line.parallel ? offsetBeside(span.labelAt, span.from, span.to, 4, -1) : span.labelAt;
-            return textMark(stacked, at, hex, size, turn);
+            return textMark(stacked, at, hex, size);
           })
           .join("\n");
         const cableLabels =
@@ -755,10 +725,9 @@ ${slashXml(slashMarks(path))}`;
                   const frame2 = pathFrame(span.slice, 0.58);
                   const tag1 = slotCableTag(line, 1);
                   const tag2 = slotCableTag(line, 2);
-                  const spanFeet = pathFootage(span.slice);
                   return [
-                    tag1 ? textMark(tag1, offsetBeside(frame1.at, frame1.from, frame1.to, 4, -1), hex, size, labelCss(frame1.from, frame1.to, spanFeet, tag1, size)) : "",
-                    tag2 ? textMark(tag2, offsetBeside(frame2.at, frame2.from, frame2.to, 12, 1), twinHex, size, labelCss(frame2.from, frame2.to, spanFeet, tag2, size)) : "",
+                    tag1 ? textMark(tag1, offsetBeside(frame1.at, frame1.from, frame1.to, 4, -1), hex, size) : "",
+                    tag2 ? textMark(tag2, offsetBeside(frame2.at, frame2.from, frame2.to, 12, 1), twinHex, size) : "",
                   ]
                     .filter(Boolean)
                     .join("\n");
@@ -837,15 +806,13 @@ ${slashXml(slashMarks(path))}`;
         const roadLabel = visibleLine
           ? (() => {
               const mid = pathMidpoint(line.path);
-              const from = line.path[0];
-              const to = line.path[line.path.length - 1];
-              if (!mid || !from || !to) return "";
+              if (!mid) return "";
               const size = line.labelSize === "xs" || line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
               if (line.callout) {
                 const at = calloutAt(mid, spanCalloutDir(line.calloutDirs, 0));
-                return `${leaderMark(mid, at, tintHex("#e4e4e7", 0.35))}\n${textMark(visibleLine, at, "#e4e4e7", size, 0, true, false)}`;
+                return `${leaderMark(mid, at, tintHex("#e4e4e7", 0.35))}\n${textMark(visibleLine, at, "#e4e4e7", size, true)}`;
               }
-              return textMark(visibleLine, mid, "#e4e4e7", size, labelCss(from, to, pathFootage(line.path), visibleLine, size));
+              return textMark(visibleLine, mid, "#e4e4e7", size);
             })()
           : "";
         const joinDots = (line.dots ?? [])
