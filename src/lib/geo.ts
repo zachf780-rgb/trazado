@@ -283,10 +283,8 @@ export function readableRotation(bearing: number): number {
   return Math.round(css * 10) / 10;
 }
 
-export function labelCss(from: LatLng, to: LatLng, spanFeet: number, text: string, size: "xs" | "sm" | "md" | "lg"): number {
-  const per = size === "lg" ? 14 : size === "md" ? 11 : size === "sm" ? 9 : 7;
-  const bearing = bearingDeg(from, to);
-  return readableRotation(spanFeet >= Math.max(text.length, 1) * per ? bearing : bearing + 90);
+export function labelCss(from: LatLng, to: LatLng, _spanFeet: number, _text: string, _size: "xs" | "sm" | "md" | "lg"): number {
+  return readableRotation(bearingDeg(from, to));
 }
 
 export function calloutAt(at: LatLng, dir: number, feet = 46): LatLng {

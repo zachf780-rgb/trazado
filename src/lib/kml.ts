@@ -453,6 +453,12 @@ function outlinedLabelDataUrl(text: string, color: string, plate: boolean): { ur
   return { url: canvas.toDataURL("image/png"), w, h, fontSize };
 }
 
+function geIconScale(w: number, h: number, fontSize: number, size: LabelSize): number {
+  const target = size === "lg" ? 22 : size === "md" ? 16 : size === "sm" ? 12 : 9;
+  const scale = (target / fontSize) * (Math.min(w, h) / 32);
+  return Math.max(0.2, Math.round(scale * 100) / 100);
+}
+
 function kmlPaint(hex: string, opacity: number): string {
   const { r, g, b } = hexToRgb(/^#[0-9a-f]{6}$/i.test(hex) ? hex : "#d4d4d8");
   const alpha = Math.round(Math.min(1, Math.max(0, opacity)) * 255);
@@ -486,28 +492,24 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
   }
   function textMark(text: string, at: LatLng, hex: string, size: LabelSize = "md", heading = 0, boxed = false): string {
     const art = artFor(text, hex, boxed);
-    const feet = size === "lg" ? 15 : size === "md" ? 11 : size === "sm" ? 8 : 6;
-    const meters = feet / 3.280839895;
-    const heightM = (art.h / Math.max(art.fontSize, 1)) * meters;
-    const widthM = (art.w / Math.max(art.fontSize, 1)) * meters;
-    const latRad = (at.lat * Math.PI) / 180;
-    const halfLat = heightM / 2 / 111320;
-    const halfLng = widthM / 2 / (111320 * Math.max(0.2, Math.cos(latRad)));
-    let rotation = -heading;
-    rotation = ((rotation + 180) % 360 + 360) % 360 - 180;
-    return `      <GroundOverlay>
-        <name>__spanlabel</name>
-        <drawOrder>30</drawOrder>
-        <altitudeMode>clampToGround</altitudeMode>
-        <Icon><href>${escapeXml(art.href)}</href></Icon>
-        <LatLonBox>
-          <north>${at.lat + halfLat}</north>
-          <south>${at.lat - halfLat}</south>
-          <east>${at.lng + halfLng}</east>
-          <west>${at.lng - halfLng}</west>
-          <rotation>${rotation.toFixed(2)}</rotation>
-        </LatLonBox>
-      </GroundOverlay>`;
+    const head = ((heading % 360) + 360) % 360;
+    return `      <Placemark>
+        <name></name>
+        <ExtendedData><Data name="spanLabel"><value>1</value></Data></ExtendedData>
+        <Style>
+          <IconStyle>
+            <scale>${geIconScale(art.w, art.h, art.fontSize, size)}</scale>
+            <heading>${head.toFixed(1)}</heading>
+            <hotSpot x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
+            <Icon><href>${escapeXml(art.href)}</href></Icon>
+          </IconStyle>
+          <LabelStyle><scale>0</scale></LabelStyle>
+        </Style>
+        <Point>
+          <altitudeMode>clampToGround</altitudeMode>
+          <coordinates>${coord(at)}</coordinates>
+        </Point>
+      </Placemark>`;
   }
   function leaderMark(from: LatLng, to: LatLng, hex: string): string {
     return `      <Placemark>
