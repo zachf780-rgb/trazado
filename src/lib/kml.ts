@@ -484,9 +484,30 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
     plateFiles.set(key, art);
     return art;
   }
-  function textMark(text: string, at: LatLng, hex: string, size: LabelSize = "md", heading = 0, boxed = false): string {
+  function textMark(text: string, at: LatLng, hex: string, size: LabelSize = "md", heading = 0, boxed = false, flat = true): string {
     const art = artFor(text, hex, boxed);
-    const feet = size === "lg" ? 6.8 : size === "md" ? 5.1 : size === "sm" ? 4.5 : 3.4;
+    if (!flat) {
+      const target = size === "lg" ? 12 : size === "md" ? 9 : size === "sm" ? 8 : 6;
+      const scale = Math.max(0.08, Math.round((target / Math.max(art.fontSize, 1)) * 100) / 100);
+      return `      <Placemark>
+        <name></name>
+        <ExtendedData><Data name="spanLabel"><value>1</value></Data></ExtendedData>
+        <Style>
+          <IconStyle>
+            <scale>${scale}</scale>
+            <heading>0</heading>
+            <hotSpot x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
+            <Icon><href>${escapeXml(art.href)}</href></Icon>
+          </IconStyle>
+          <LabelStyle><scale>0</scale></LabelStyle>
+        </Style>
+        <Point>
+          <altitudeMode>clampToGround</altitudeMode>
+          <coordinates>${coord(at)}</coordinates>
+        </Point>
+      </Placemark>`;
+    }
+    const feet = size === "lg" ? 3.2 : size === "md" ? 2.4 : size === "sm" ? 2.1 : 1.6;
     const heightM = (art.h / Math.max(art.fontSize, 1)) * (feet / 3.280839895);
     const widthM = (art.w / Math.max(art.fontSize, 1)) * (feet / 3.280839895);
     const latRad = (at.lat * Math.PI) / 180;
@@ -631,7 +652,7 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
   const styleBlock = [
     ...ALL_LINE_PRESETS.map((p) => lineStyleXml(`line-${p.id}`, p.kmlColor, lineWidth(p.id))),
     ...ALL_POINT_PRESETS.flatMap((p) => [
-      pointStyleXml(`pt-${p.id}`, `files/${p.id}.png`, 0.6, pointIconScale(p.id)),
+      pointStyleXml(`pt-${p.id}`, `files/${p.id}.png`, 0.45, pointIconScale(p.id)),
       pointStyleXml(`pt-${p.id}-quiet`, `files/${p.id}.png`, 0, pointIconScale(p.id)),
     ]),
     `    <Style id="remove-shade">
@@ -714,7 +735,7 @@ ${slashXml(slashMarks(path))}`;
             const boxed = line.callout ? (cableNote ? `${stacked}\n${cableNote}` : stacked) : stacked;
             if (line.callout) {
               const at = calloutAt(span.labelAt, spanCalloutDir(line.calloutDirs, index));
-              return `${leaderMark(span.labelAt, at, tintHex(hex, 0.45))}\n${textMark(boxed, at, hex, size, 0, true)}`;
+              return `${leaderMark(span.labelAt, at, tintHex(hex, 0.45))}\n${textMark(boxed, at, hex, size, 0, true, false)}`;
             }
             const turn = labelCss(span.from, span.to, shownFeet, stacked.replace("\n", ""), size);
             const at = line.parallel ? offsetBeside(span.labelAt, span.from, span.to, 4, -1) : span.labelAt;
@@ -822,7 +843,7 @@ ${slashXml(slashMarks(path))}`;
               const size = line.labelSize === "xs" || line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
               if (line.callout) {
                 const at = calloutAt(mid, spanCalloutDir(line.calloutDirs, 0));
-                return `${leaderMark(mid, at, tintHex("#e4e4e7", 0.35))}\n${textMark(visibleLine, at, "#e4e4e7", size, 0, true)}`;
+                return `${leaderMark(mid, at, tintHex("#e4e4e7", 0.35))}\n${textMark(visibleLine, at, "#e4e4e7", size, 0, true, false)}`;
               }
               return textMark(visibleLine, mid, "#e4e4e7", size, labelCss(from, to, pathFootage(line.path), visibleLine, size));
             })()
@@ -915,7 +936,8 @@ ${inner}
                 : "";
         const sized = (p.kind === "pedestal" && isPedType(p.pedType)) || (p.kind === "vault" && isVaultType(p.vaultType));
         const small = p.size === "sm" ? objectScale("sm") : 1;
-        const iconScale = ((sized ? 0.8 : variant ? 1.45 : pointIconScale(p.kind)) * small).toFixed(2);
+        const baseScale = sized ? 0.34 : variant ? (p.anchors.length > 0 ? 0.56 : 0.22) : pointIconScale(p.kind);
+        const iconScale = (baseScale * small).toFixed(2);
         const iconHref = variant || `files/${p.kind}.png`;
         const showLabel = Boolean(named) || p.remove;
         const visibleName = p.remove ? (named ? `remove ${named}` : "remove") : named || fallback;
@@ -926,7 +948,7 @@ ${inner}
             <hotSpot x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
             <Icon><href>${escapeXml(iconHref)}</href></Icon>
           </IconStyle>
-          <LabelStyle><color>ffffffff</color><colorMode>normal</colorMode><scale>${showLabel ? 0.6 : 0}</scale></LabelStyle>
+          <LabelStyle><color>ffffffff</color><colorMode>normal</colorMode><scale>${showLabel ? 0.45 : 0}</scale></LabelStyle>
         </Style>`
           : `<styleUrl>#pt-${p.kind}${showLabel ? "" : "-quiet"}</styleUrl>`;
         const removal = p.remove ? slashXml(pointSlashMarks(p.position)) : "";
@@ -962,7 +984,7 @@ ${project.polygons
         <ExtendedData><Data name="polyLabel"><value>1</value></Data></ExtendedData>
         <Style>
           <IconStyle><scale>0</scale></IconStyle>
-          <LabelStyle><color>ffffffff</color><colorMode>normal</colorMode><scale>0.8</scale></LabelStyle>
+          <LabelStyle><color>ffffffff</color><colorMode>normal</colorMode><scale>0.5</scale></LabelStyle>
         </Style>
         <Point><altitudeMode>clampToGround</altitudeMode><coordinates>${coord({ lat, lng })}</coordinates></Point>
       </Placemark>`

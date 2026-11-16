@@ -99,9 +99,9 @@ export function vaultColor(type: VaultType): { fill: string; ink: string } {
 }
 
 export function pointIconScale(kind: PointKind): number {
-  if (kind === "passing") return 0.45;
-  if (kind === "pin") return 1.1;
-  return 0.8;
+  if (kind === "passing") return 0.22;
+  if (kind === "pin") return 0.56;
+  return 0.34;
 }
 
 export interface LinePreset {
