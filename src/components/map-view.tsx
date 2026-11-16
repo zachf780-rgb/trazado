@@ -67,7 +67,7 @@ function labelTurn(map: L.Map, from: LatLng, to: LatLng, text: string, size: str
   const b = map.latLngToContainerPoint([to.lat, to.lng]);
   const len = Math.hypot(b.x - a.x, b.y - a.y);
   const bearing = (Math.atan2(b.x - a.x, a.y - b.y) * 180) / Math.PI;
-  const charW = size === "lg" ? 8 : size === "md" ? 6.4 : size === "sm" ? 5.6 : 4.4;
+  const charW = size === "lg" ? 10.7 : size === "md" ? 8 : size === "sm" ? 6.4 : 4.4;
   const along = len >= Math.max(text.length, 1) * charW + 8;
   return readableRotation(along ? bearing : bearing + 90);
 }
@@ -107,6 +107,7 @@ function bindName(
   color: string,
   side: LabelSide = "top",
   kind?: PointKind,
+  size: "xs" | "sm" | "md" | "lg" = "sm",
 ) {
   const label = text.trim();
   if (!label) return;
@@ -128,7 +129,7 @@ function bindName(
     direction: side,
     offset,
     opacity: 1,
-    className: "object-label",
+    className: `object-label size-${size}`,
     interactive: false,
   });
 }
@@ -1061,6 +1062,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         pointLabelColor(pt.kind),
         pt.labelSide ?? "top",
         pt.kind,
+        pt.labelSize || "sm",
       );
       marker.addTo(group);
       if (pt.remove) {

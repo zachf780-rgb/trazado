@@ -155,7 +155,7 @@ export function PlantApp() {
 	const overlayRef = useRef(null);
 	const gpsWatch = useRef(null);
 	const tool = usePlantStore((s) => s.tool);
-	const placeSmall = usePlantStore((s) => s.placeSmall);
+	const placeBig = usePlantStore((s) => s.placeBig);
 	const draft = usePlantStore((s) => s.draft);
 	const pointer = usePlantStore((s) => s.pointer);
 	const shift = usePlantStore((s) => s.shift);
@@ -601,9 +601,9 @@ export function PlantApp() {
 					children: [/* @__PURE__ */ jsx("input", {
 						type: "checkbox",
 						className: "size-3.5 accent-white",
-						checked: placeSmall,
-						onChange: (e) => usePlantStore.getState().setPlaceSmall(e.target.checked)
-					}), "Small"]
+						checked: placeBig,
+						onChange: (e) => usePlantStore.getState().setPlaceBig(e.target.checked)
+					}), "Big"]
 				}) : null,
 				showDraftBar ? /* @__PURE__ */ jsx("div", {
 					className: "pointer-events-none absolute inset-x-0 top-28 z-20 flex justify-center px-3 md:top-20",
@@ -1674,9 +1674,25 @@ function Inspector({ line, point, polygon, overlay }) {
 					className: "mt-2 flex items-center gap-2 text-sm",
 					children: [/* @__PURE__ */ jsx("input", {
 						type: "checkbox",
-						checked: point.size === "sm",
-						onChange: (e) => usePlantStore.getState().updatePoint(point.id, { size: e.target.checked ? "sm" : "lg" })
-					}), "Small"]
+						checked: point.size === "xl",
+						onChange: (e) => usePlantStore.getState().updatePoint(point.id, { size: e.target.checked ? "xl" : "lg" })
+					}), "Big"]
+				}) : null,
+				point.kind === "pole" || point.kind === "pedestal" || point.kind === "vault" ? /* @__PURE__ */ jsxs("div", {
+					className: "mt-2 flex flex-wrap items-center gap-1",
+					children: [/* @__PURE__ */ jsx("span", {
+						className: "mr-1 text-xs text-muted-foreground",
+						children: "Font"
+					}), [["xs", "XS"], ["sm", "S"], ["md", "M"], ["lg", "L"]].map(([size, label]) => /* @__PURE__ */ jsx("button", {
+						type: "button",
+						className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", (point.labelSize || "sm") === size ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
+						onClick: () => {
+							const next = size === "xs" || size === "sm" || size === "lg" ? size : "md";
+							usePlantStore.getState().setLabelSize(next);
+							usePlantStore.getState().updatePoint(point.id, { labelSize: next });
+						},
+						children: label
+					}, size))]
 				}) : null,
 				/* @__PURE__ */ jsxs("label", {
 					className: "mt-2 flex items-center gap-2 text-sm",

@@ -42,6 +42,16 @@ function coord(ll: LatLng): string {
   return `${ll.lng},${ll.lat},0`;
 }
 
+function nudgeName(at: LatLng, side: string | undefined): LatLng {
+  const meters = 7;
+  const dLat = meters / 111320;
+  const dLng = meters / (111320 * Math.max(0.2, Math.cos((at.lat * Math.PI) / 180)));
+  if (side === "bottom") return { lat: at.lat - dLat, lng: at.lng };
+  if (side === "left") return { lat: at.lat, lng: at.lng - dLng };
+  if (side === "right") return { lat: at.lat, lng: at.lng + dLng };
+  return { lat: at.lat + dLat, lng: at.lng };
+}
+
 function coordList(path: LatLng[]): string {
   return path.map(coord).join(" ");
 }
@@ -411,7 +421,7 @@ function legendPng(lines: LineFeature[], points: PointFeature[]): string {
   return canvas.toDataURL("image/png");
 }
 
-function outlinedLabelDataUrl(text: string, color: string, plate: boolean, fontSize = 64): { url: string; w: number; h: number; fontSize: number } {
+function outlinedLabelDataUrl(text: string, color: string, plate: boolean, fontSize = 64, outline = "#ffffff"): { url: string; w: number; h: number; fontSize: number } {
   const drawn = text.split("\n").map((line) => line.trim()).filter(Boolean);
   const lines = drawn.length > 0 ? drawn : [text];
   if (typeof document === "undefined") return { url: "", w: 32, h: 32, fontSize };
@@ -442,7 +452,7 @@ function outlinedLabelDataUrl(text: string, color: string, plate: boolean, fontS
   ctx.lineJoin = "round";
   ctx.miterLimit = 2;
   ctx.lineWidth = stroke;
-  ctx.strokeStyle = "#ffffff";
+  ctx.strokeStyle = outline;
   ctx.fillStyle = color;
   lines.forEach((line, index) => {
     const y = padY + lineH * index + lineH / 2;
@@ -471,13 +481,13 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
   const pedFiles = new Map<string, string>();
   const vaultFiles = new Map<string, string>();
   const plateFiles = new Map<string, string>();
-  function textMark(text: string, at: LatLng, hex: string, size: LabelSize = "md", boxed = false): string {
-    const px = size === "lg" ? 12 : size === "md" ? 9 : size === "sm" ? 8 : 6;
+  function textMark(text: string, at: LatLng, hex: string, size: LabelSize = "md", boxed = false, outline = "#ffffff"): string {
+    const px = size === "lg" ? 16 : size === "md" ? 12 : size === "sm" ? 9 : 6;
     const plate = boxed || labelPlate;
-    const key = `${px}|${plate ? "p" : "n"}|${hex}|${text}`;
+    const key = `${px}|${plate ? "p" : "n"}|${hex}|${outline}|${text}`;
     let href = plateFiles.get(key);
     if (!href) {
-      const drawn = outlinedLabelDataUrl(text, hex, plate, px);
+      const drawn = outlinedLabelDataUrl(text, hex, plate, px, outline);
       const name = `label-${plateFiles.size + 1}.png`;
       files!.file(name, dataUrlToBytes(drawn.url).bytes);
       href = `files/${name}`;
@@ -888,7 +898,8 @@ ${inner}
           p.kind === "pedestal" && p.pedType ? `<Data name="pedType"><value>${p.pedType}</value></Data>` : "",
           p.kind === "pedestal" && p.pedRotate ? `<Data name="pedRotate"><value>${pedestalDir(p.pedRotate)}</value></Data>` : "",
           p.kind === "vault" && p.vaultType ? `<Data name="vaultType"><value>${p.vaultType}</value></Data>` : "",
-          p.size === "sm" ? `<Data name="size"><value>sm</value></Data>` : "",
+          p.size === "xl" ? `<Data name="size"><value>xl</value></Data>` : "",
+          p.labelSize && p.labelSize !== "sm" ? `<Data name="labelSize"><value>${p.labelSize}</value></Data>` : "",
         ]
           .filter(Boolean)
           .join("");
@@ -902,23 +913,27 @@ ${inner}
                 ? vaultFiles.get(`vault-${p.vaultType}.png`)
                 : "";
         const sized = (p.kind === "pedestal" && isPedType(p.pedType)) || (p.kind === "vault" && isVaultType(p.vaultType));
-        const small = p.size === "sm" ? objectScale("sm") : 1;
-        const baseScale = sized ? 0.34 : variant ? (p.anchors.length > 0 ? 0.56 : 0.22) : pointIconScale(p.kind);
-        const iconScale = (baseScale * small).toFixed(2);
+        const gearKind = p.kind === "pole" || p.kind === "pedestal" || p.kind === "vault";
+        const grown = p.size === "xl" ? objectScale("xl") : 1;
+        const baseScale = sized ? 0.8 : variant ? 1.45 : pointIconScale(p.kind);
+        const iconScale = (baseScale * grown).toFixed(2);
         const iconHref = variant || `files/${p.kind}.png`;
         const showLabel = Boolean(named) || p.remove;
         const visibleName = p.remove ? (named ? `remove ${named}` : "remove") : named || fallback;
-        const style = variant || small !== 1
+        const style = gearKind || variant || grown !== 1
           ? `<Style>
           <IconStyle>
             <scale>${iconScale}</scale>
             <hotSpot x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
             <Icon><href>${escapeXml(iconHref)}</href></Icon>
           </IconStyle>
-          <LabelStyle><color>ffffffff</color><colorMode>normal</colorMode><scale>${showLabel ? 0.45 : 0}</scale></LabelStyle>
+          <LabelStyle><scale>0</scale></LabelStyle>
         </Style>`
           : `<styleUrl>#pt-${p.kind}${showLabel ? "" : "-quiet"}</styleUrl>`;
         const removal = p.remove ? slashXml(pointSlashMarks(p.position)) : "";
+        const nameAt = nudgeName(p.position, p.labelSide);
+        const nameSize = p.labelSize === "xs" || p.labelSize === "md" || p.labelSize === "lg" ? p.labelSize : "sm";
+        const nameMark = gearKind && showLabel ? textMark(visibleName, nameAt, "#f4f4f5", nameSize, false, "#111113") : "";
         return `      <Placemark>
         <name>${escapeXml(visibleName)}</name>
         ${kmlDescription(p.description)}
@@ -926,6 +941,7 @@ ${inner}
         ${style}
         <Point><coordinates>${coord(p.position)}</coordinates></Point>
       </Placemark>
+${nameMark}
 ${removal}`;
       })
       .join("\n");
@@ -1400,7 +1416,8 @@ export async function parsePlantFile(file: File): Promise<
         pedType: kind === "pedestal" && isPedType(storedPed) ? storedPed : "",
         pedRotate: kind === "pedestal" ? pedestalDir(dataValue(pm, "pedRotate")) : 0,
         vaultType: kind === "vault" && isVaultType(storedVault) ? storedVault : "",
-        size: dataValue(pm, "size") === "sm" ? "sm" : "lg",
+        size: dataValue(pm, "size") === "xl" ? "xl" : "lg",
+        labelSize: (["xs", "md", "lg"].includes(dataValue(pm, "labelSize")) ? dataValue(pm, "labelSize") : "sm") as "xs" | "sm" | "md" | "lg",
       });
     }
   }

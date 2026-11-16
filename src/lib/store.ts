@@ -43,8 +43,8 @@ interface PlantState extends PlantProject {
   gpsFollow: boolean;
   snapAsk: string | null;
   lineSnap: { lineId: string; at: LatLng; kind: "end" | "cross"; click: LatLng; showDot: boolean } | null;
-  placeSmall: boolean;
-  setPlaceSmall: (placeSmall: boolean) => void;
+  placeBig: boolean;
+  setPlaceBig: (placeBig: boolean) => void;
   labelPlate: boolean;
   setLabelPlate: (labelPlate: boolean) => void;
   labelSize: LabelSize;
@@ -84,7 +84,7 @@ interface PlantState extends PlantProject {
       Pick<LineFeature, "notes" | "name" | "parallel" | "joinEnds" | "intoSlot" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "emptyPipe" | "remove" | "fiberUnit" | "overrideFootage" | "footageText" | "hideLegend" | "hideFootage" | "labelSize" | "pipeRoles" | "occupied" | "hideSpan" | "aerialMode" | "strandOnly" | "workOps" | "cableWork" | "wreckOut" | "callout" | "calloutDirs">
     >,
   ) => void;
-  updatePoint: (id: string, patch: Partial<Pick<PointFeature, "name" | "description" | "labelSide" | "riser" | "anchors" | "remove" | "hideLegend" | "pedType" | "pedRotate" | "vaultType" | "size">>) => void;
+  updatePoint: (id: string, patch: Partial<Pick<PointFeature, "name" | "description" | "labelSide" | "riser" | "anchors" | "remove" | "hideLegend" | "pedType" | "pedRotate" | "vaultType" | "size" | "labelSize">>) => void;
   updatePolygon: (
     id: string,
     patch: Partial<Pick<PolygonFeature, "name" | "description" | "stroke" | "fill" | "strokeOpacity" | "fillOpacity">>,
@@ -310,7 +310,8 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
       pedType: point.kind === "pedestal" && isPedType(point.pedType) ? point.pedType : "",
       pedRotate: point.kind === "pedestal" ? pedestalDir(point.pedRotate) : 0,
       vaultType: point.kind === "vault" && isVaultType(point.vaultType) ? point.vaultType : "",
-      size: canResize(point.kind) && point.size === "sm" ? "sm" : "lg",
+      size: canResize(point.kind) && point.size === "xl" ? "xl" : "lg",
+      labelSize: isLabelSize(point.labelSize) ? point.labelSize : "sm",
     });
   }
   const polygons: PolygonFeature[] = [];
@@ -379,7 +380,7 @@ export const usePlantStore = create<PlantState>()(
       gpsFollow: false,
       snapAsk: null,
       lineSnap: null,
-      placeSmall: false,
+      placeBig: false,
       labelPlate: false,
       labelSize: "sm",
       fontStep: 1,
@@ -501,7 +502,7 @@ export const usePlantStore = create<PlantState>()(
         }
         set({ lines });
       },
-      setPlaceSmall: (placeSmall) => set({ placeSmall }),
+      setPlaceBig: (placeBig) => set({ placeBig }),
       setLabelPlate: (labelPlate) => set({ labelPlate }),
       setLabelSize: (labelSize) => set({ labelSize }),
       select: (selection) => set({ selection, tool: "select", draft: null }),
@@ -524,7 +525,8 @@ export const usePlantStore = create<PlantState>()(
           pedType: "",
           pedRotate: 0,
           vaultType: "",
-          size: canResize(kind) && s.placeSmall ? "sm" : "lg",
+          size: canResize(kind) && s.placeBig ? "xl" : "lg",
+          labelSize: isLabelSize(s.labelSize) ? s.labelSize : "sm",
         };
         set({
           ...commit(s, { points: [...s.points, point] }),

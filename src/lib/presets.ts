@@ -16,14 +16,14 @@ export function lineOpacity(kind: LineKind): number {
   return kind === "road" ? 0.5 : 1;
 }
 
-export const OBJECT_SMALL = 0.62;
+export const OBJECT_BIG = 1.6;
 
 export function canResize(kind: PointKind): boolean {
   return kind === "pedestal" || kind === "vault" || kind === "mdu" || kind === "pole";
 }
 
 export function objectScale(size: string | undefined): number {
-  return size === "sm" ? OBJECT_SMALL : 1;
+  return size === "xl" ? OBJECT_BIG : 1;
 }
 
 export const PED_TYPES: { id: Exclude<PedType, "">; letter: string; legend: string }[] = [
@@ -101,6 +101,7 @@ export function vaultColor(type: VaultType): { fill: string; ink: string } {
 export function pointIconScale(kind: PointKind): number {
   if (kind === "passing") return 0.22;
   if (kind === "pin") return 0.56;
+  if (kind === "pole" || kind === "pedestal" || kind === "vault") return 0.8;
   return 0.34;
 }
 

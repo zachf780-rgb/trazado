@@ -111,7 +111,8 @@ export interface PointFeature {
   pedType: PedType;
   pedRotate: number;
   vaultType: VaultType;
-  size: "lg" | "sm";
+  size: "lg" | "xl";
+  labelSize: LabelSize;
 }
 
 export interface PolygonFeature {
