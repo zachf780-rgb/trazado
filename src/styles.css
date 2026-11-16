@@ -194,8 +194,8 @@
 .footage-label.size-sm .footage-feet,
 .footage-label.size-sm .footage-detail,
 .leaflet-tooltip.object-label.size-sm {
-  font-size: 9px;
-  -webkit-text-stroke: 2.2px #fff;
+  font-size: 11px;
+  -webkit-text-stroke: 2.6px #fff;
 }
 
 .footage-label.size-md .footage-stack,
@@ -231,7 +231,7 @@
   color: #f8fafc;
   font-family: var(--font-mono);
   font-weight: 700;
-  font-size: 9px;
+  font-size: 12px;
   letter-spacing: 0.01em;
   line-height: 1.15;
   padding: 0;

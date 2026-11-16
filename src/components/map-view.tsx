@@ -67,7 +67,7 @@ function labelTurn(map: L.Map, from: LatLng, to: LatLng, text: string, size: str
   const b = map.latLngToContainerPoint([to.lat, to.lng]);
   const len = Math.hypot(b.x - a.x, b.y - a.y);
   const bearing = (Math.atan2(b.x - a.x, a.y - b.y) * 180) / Math.PI;
-  const charW = size === "lg" ? 10.7 : size === "md" ? 8 : size === "sm" ? 6.4 : 4.4;
+  const charW = size === "lg" ? 10.7 : size === "md" ? 8 : size === "sm" ? 7.3 : 7.3;
   const along = len >= Math.max(text.length, 1) * charW + 8;
   return readableRotation(along ? bearing : bearing + 90);
 }
@@ -877,7 +877,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
               }).addTo(group);
             }
             L.marker([at.lat, at.lng], {
-              icon: footageIcon(text, "", "#e4e4e7", line.callout || labelPlate, false, line.labelSize || "sm", line.callout ? 0 : labelTurn(map, from, to, text, line.labelSize || "sm")),
+              icon: footageIcon(text, "", "#e4e4e7", line.callout || labelPlate, false, line.labelSize || "md", line.callout ? 0 : labelTurn(map, from, to, text, line.labelSize || "md")),
               interactive: false,
               keyboard: false,
               zIndexOffset: 400,
@@ -886,7 +886,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         }
       } else footageSpans(line.path, gearPoints(points), line.splits ?? [], (line.dots ?? []).map((dot) => dot.at)).forEach((span, index) => {
         const parts = spanParts(spanShownFeet(span.feet, measured, shown), line);
-        const size = line.labelSize || "sm";
+        const size = line.labelSize || "md";
         const cableNote = line.parallel
           ? [slotCableTag(line, 1), slotCableTag(line, 2)].filter(Boolean).join("/")
           : "";
@@ -933,7 +933,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
           if (tag1) {
             const at = offsetBeside(frame1.at, frame1.from, frame1.to, offsetFt * 0.35, -1);
             L.marker([at.lat, at.lng], {
-              icon: footageIcon(tag1, "", paint, labelPlate, true, line.labelSize || "sm", labelTurn(map, frame1.from, frame1.to, tag1, line.labelSize || "sm")),
+              icon: footageIcon(tag1, "", paint, labelPlate, true, line.labelSize || "md", labelTurn(map, frame1.from, frame1.to, tag1, line.labelSize || "md")),
               interactive: false,
               keyboard: false,
               zIndexOffset: 390,
@@ -942,7 +942,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
           if (tag2) {
             const at = offsetBeside(frame2.at, frame2.from, frame2.to, offsetFt, 1);
             L.marker([at.lat, at.lng], {
-              icon: footageIcon(tag2, "", tintHex(paint, 0.42), labelPlate, true, line.labelSize || "sm", labelTurn(map, frame2.from, frame2.to, tag2, line.labelSize || "sm")),
+              icon: footageIcon(tag2, "", tintHex(paint, 0.42), labelPlate, true, line.labelSize || "md", labelTurn(map, frame2.from, frame2.to, tag2, line.labelSize || "md")),
               interactive: false,
               keyboard: false,
               zIndexOffset: 390,
@@ -1062,7 +1062,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         pointLabelColor(pt.kind),
         pt.labelSide ?? "top",
         pt.kind,
-        pt.labelSize || "sm",
+        pt.labelSize || "md",
       );
       marker.addTo(group);
       if (pt.remove) {

@@ -268,7 +268,7 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
       footageText: typeof line.footageText === "string" ? line.footageText : "",
       hideLegend: line.hideLegend === true,
       hideFootage: line.hideFootage === true,
-      labelSize: isLabelSize(line.labelSize) ? line.labelSize : "sm",
+      labelSize: isLabelSize(line.labelSize) ? line.labelSize : "md",
       name: typeof line.name === "string" ? line.name : "",
       splits: Array.isArray(line.splits) ? line.splits.filter(isLatLng) : [],
       dots: Array.isArray(line.dots)
@@ -311,7 +311,7 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
       pedRotate: point.kind === "pedestal" ? pedestalDir(point.pedRotate) : 0,
       vaultType: point.kind === "vault" && isVaultType(point.vaultType) ? point.vaultType : "",
       size: canResize(point.kind) && point.size === "xl" ? "xl" : "lg",
-      labelSize: isLabelSize(point.labelSize) ? point.labelSize : "sm",
+      labelSize: isLabelSize(point.labelSize) ? point.labelSize : "md",
     });
   }
   const polygons: PolygonFeature[] = [];
@@ -382,22 +382,22 @@ export const usePlantStore = create<PlantState>()(
       lineSnap: null,
       placeBig: false,
       labelPlate: false,
-      labelSize: "sm",
-      fontStep: 1,
+      labelSize: "md",
+      fontStep: 2,
       past: [],
       future: [],
 
       markHydrated: () => {
         const s = get();
         const clean = sanitizeProject(s);
-        const reset = s.fontStep !== 1;
+        const reset = s.fontStep !== 2;
         set({
           ...clean,
           hydrated: true,
           draft: null,
           selection: null,
-          fontStep: 1,
-          labelSize: reset ? "sm" : isLabelSize(s.labelSize) ? s.labelSize : "sm",
+          fontStep: 2,
+          labelSize: reset ? "md" : isLabelSize(s.labelSize) ? s.labelSize : "md",
         });
       },
       setTool: (tool) =>
@@ -526,7 +526,7 @@ export const usePlantStore = create<PlantState>()(
           pedRotate: 0,
           vaultType: "",
           size: canResize(kind) && s.placeBig ? "xl" : "lg",
-          labelSize: isLabelSize(s.labelSize) ? s.labelSize : "sm",
+          labelSize: isLabelSize(s.labelSize) ? s.labelSize : "md",
         };
         set({
           ...commit(s, { points: [...s.points, point] }),
@@ -650,7 +650,7 @@ export const usePlantStore = create<PlantState>()(
             footageText: "",
             hideLegend: false,
             hideFootage: false,
-            labelSize: isLabelSize(s.labelSize) ? s.labelSize : "sm",
+            labelSize: isLabelSize(s.labelSize) ? s.labelSize : "md",
             name: "",
             splits: [],
             dots: d.pending.map((join) => ({ at: join.at, peer: join.targetId, show: join.showDot })),
