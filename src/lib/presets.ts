@@ -16,14 +16,23 @@ export function lineOpacity(kind: LineKind): number {
   return kind === "road" ? 0.5 : 1;
 }
 
-export const OBJECT_BIG = 1.6;
-
 export function canResize(kind: PointKind): boolean {
   return kind === "pedestal" || kind === "vault" || kind === "mdu" || kind === "pole";
 }
 
-export function objectScale(size: string | undefined): number {
-  return size === "xl" ? OBJECT_BIG : 1;
+export function objectScale(kind: PointKind, size: string | undefined): number {
+  const step = size === "big" ? "big" : size === "med" ? "med" : "std";
+  if (kind === "pedestal") {
+    if (step === "big") return 1.6;
+    if (step === "med") return 1.3;
+    return 1;
+  }
+  if (kind === "vault") {
+    if (step === "big") return 1.6;
+    if (step === "std") return 0.77;
+    return 1;
+  }
+  return step === "big" ? 1.6 : 1;
 }
 
 export const PED_TYPES: { id: Exclude<PedType, "">; letter: string; legend: string }[] = [

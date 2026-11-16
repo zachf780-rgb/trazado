@@ -155,7 +155,7 @@ export function PlantApp() {
 	const overlayRef = useRef(null);
 	const gpsWatch = useRef(null);
 	const tool = usePlantStore((s) => s.tool);
-	const placeBig = usePlantStore((s) => s.placeBig);
+	const placeSize = usePlantStore((s) => s.placeSize);
 	const draft = usePlantStore((s) => s.draft);
 	const pointer = usePlantStore((s) => s.pointer);
 	const shift = usePlantStore((s) => s.shift);
@@ -596,14 +596,17 @@ export function PlantApp() {
 					onTool: (t) => usePlantStore.getState().setTool(t),
 					onOverlay: () => overlayRef.current?.click()
 				}),
-				tool === "pedestal" || tool === "vault" || tool === "mdu" || tool === "pole" ? /* @__PURE__ */ jsxs("label", {
-					className: "absolute bottom-[8.25rem] left-3 z-30 flex items-center gap-2 rounded-[var(--radius-md)] border border-border bg-elevated px-2.5 py-1.5 text-xs shadow-lg md:bottom-4 md:left-36",
-					children: [/* @__PURE__ */ jsx("input", {
-						type: "checkbox",
-						className: "size-3.5 accent-white",
-						checked: placeBig,
-						onChange: (e) => usePlantStore.getState().setPlaceBig(e.target.checked)
-					}), "Big"]
+				tool === "pedestal" || tool === "vault" || tool === "mdu" || tool === "pole" ? /* @__PURE__ */ jsxs("div", {
+					className: "absolute bottom-[8.25rem] left-3 z-30 flex items-center gap-1 rounded-[var(--radius-md)] border border-border bg-elevated px-2 py-1.5 text-xs shadow-lg md:bottom-4 md:left-36",
+					children: [/* @__PURE__ */ jsx("span", {
+						className: "mr-1 text-muted-foreground",
+						children: "Size"
+					}), (tool === "pedestal" || tool === "vault" ? [["std", "Std"], ["med", "Med"], ["big", "Lg"]] : [["std", "Std"], ["big", "Lg"]]).map(([size, label]) => /* @__PURE__ */ jsx("button", {
+						type: "button",
+						className: cn("rounded-[var(--radius-xs)] border px-2 py-1", (tool === "pole" || tool === "mdu" ? placeSize === "big" ? "big" : "std" : placeSize) === size ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
+						onClick: () => usePlantStore.getState().setPlaceSize(size === "big" ? "big" : size === "std" ? "std" : "med"),
+						children: label
+					}, size))]
 				}) : null,
 				showDraftBar ? /* @__PURE__ */ jsx("div", {
 					className: "pointer-events-none absolute inset-x-0 top-28 z-20 flex justify-center px-3 md:top-20",
@@ -1670,30 +1673,34 @@ function Inspector({ line, point, polygon, overlay }) {
 						}
 					}
 				}),
-				canResize(point.kind) ? /* @__PURE__ */ jsxs("label", {
-					className: "mt-2 flex items-center gap-2 text-sm",
-					children: [/* @__PURE__ */ jsx("input", {
-						type: "checkbox",
-						checked: point.size === "xl",
-						onChange: (e) => usePlantStore.getState().updatePoint(point.id, { size: e.target.checked ? "xl" : "lg" })
-					}), "Big"]
+				canResize(point.kind) ? /* @__PURE__ */ jsxs("div", {
+					className: "mt-2 flex flex-wrap items-center gap-1",
+					children: [/* @__PURE__ */ jsx("span", {
+						className: "mr-1 text-xs text-muted-foreground",
+						children: "Size"
+					}), (point.kind === "pedestal" || point.kind === "vault" ? [["std", "Std"], ["med", "Med"], ["big", "Lg"]] : [["std", "Std"], ["big", "Lg"]]).map(([size, label]) => /* @__PURE__ */ jsx("button", {
+						type: "button",
+						className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", (point.size || "med") === size ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
+						onClick: () => usePlantStore.getState().updatePoint(point.id, { size: size === "big" ? "big" : size === "std" ? "std" : "med" }),
+						children: label
+					}, size))]
 				}) : null,
-				point.kind === "pole" || point.kind === "pedestal" || point.kind === "vault" ? /* @__PURE__ */ jsxs("div", {
+				/* @__PURE__ */ jsxs("div", {
 					className: "mt-2 flex flex-wrap items-center gap-1",
 					children: [/* @__PURE__ */ jsx("span", {
 						className: "mr-1 text-xs text-muted-foreground",
 						children: "Font"
-					}), [["xs", "XS"], ["sm", "S"], ["md", "M"], ["lg", "L"]].map(([size, label]) => /* @__PURE__ */ jsx("button", {
+					}), [["sm", "S"], ["md", "M"], ["lg", "L"], ["xl", "XL"]].map(([size, label]) => /* @__PURE__ */ jsx("button", {
 						type: "button",
-						className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", (point.labelSize || "md") === size ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
+						className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", (point.labelSize || "lg") === size ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
 						onClick: () => {
-							const next = size === "xs" || size === "sm" || size === "lg" ? size : "md";
-							usePlantStore.getState().setLabelSize(next);
+							const next = size === "sm" || size === "md" || size === "xl" ? size : "lg";
+							usePlantStore.getState().setObjectLabelSize(next);
 							usePlantStore.getState().updatePoint(point.id, { labelSize: next });
 						},
 						children: label
 					}, size))]
-				}) : null,
+				}),
 				/* @__PURE__ */ jsxs("label", {
 					className: "mt-2 flex items-center gap-2 text-sm",
 					children: [/* @__PURE__ */ jsx("input", {

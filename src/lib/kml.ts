@@ -30,7 +30,6 @@ import {
   pointPreset,
   isPedType,
   isVaultType,
-  objectScale,
   pedestalColor,
   pedestalDir,
   vaultColor,
@@ -472,7 +471,7 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
   const vaultFiles = new Map<string, string>();
   const plateFiles = new Map<string, string>();
   function textMark(text: string, at: LatLng, hex: string, size: LabelSize = "md", boxed = false, outline = "#ffffff"): string {
-    const px = size === "lg" ? 16 : size === "sm" || size === "xs" ? 11 : 12;
+    const px = size === "xl" ? 22 : size === "lg" ? 16 : size === "sm" || size === "xs" ? 11 : 12;
     const plate = boxed || labelPlate;
     const key = `${px}|${plate ? "p" : "n"}|${hex}|${outline}|${text}`;
     let href = plateFiles.get(key);
@@ -888,8 +887,8 @@ ${inner}
           p.kind === "pedestal" && p.pedType ? `<Data name="pedType"><value>${p.pedType}</value></Data>` : "",
           p.kind === "pedestal" && p.pedRotate ? `<Data name="pedRotate"><value>${pedestalDir(p.pedRotate)}</value></Data>` : "",
           p.kind === "vault" && p.vaultType ? `<Data name="vaultType"><value>${p.vaultType}</value></Data>` : "",
-          p.size === "xl" ? `<Data name="size"><value>xl</value></Data>` : "",
-          p.labelSize && p.labelSize !== "md" ? `<Data name="labelSize"><value>${p.labelSize}</value></Data>` : "",
+          `<Data name="size"><value>${p.size === "big" ? "big" : p.size === "std" ? "std" : "med"}</value></Data>`,
+          p.labelSize !== "lg" ? `<Data name="labelSize"><value>${p.labelSize === "sm" || p.labelSize === "md" || p.labelSize === "xl" ? p.labelSize : "lg"}</value></Data>` : "",
         ]
           .filter(Boolean)
           .join("");
@@ -902,34 +901,37 @@ ${inner}
               : p.kind === "vault" && isVaultType(p.vaultType)
                 ? vaultFiles.get(`vault-${p.vaultType}.png`)
                 : "";
-        const gearKind = p.kind === "pole" || p.kind === "pedestal" || p.kind === "vault";
-        const grown = p.size === "xl";
+        const step = p.size === "big" ? "big" : p.size === "std" ? "std" : "med";
         const baseScale =
           p.kind === "pedestal"
-            ? grown
+            ? step === "big"
               ? 0.8
-              : 0.34
+              : step === "med"
+                ? 0.57
+                : 0.34
             : p.kind === "pole"
-              ? (variant ? 1.45 : 0.8) * (grown ? 1.6 : 1)
+              ? (variant ? 1.45 : 0.8) * (step === "big" ? 1.6 : 1)
               : p.kind === "vault"
-                ? 0.8 * (grown ? 1.6 : 1)
-                : pointIconScale(p.kind) * (grown ? objectScale("xl") : 1);
+                ? step === "big"
+                  ? 1.28
+                  : step === "std"
+                    ? 0.62
+                    : 0.8
+                : pointIconScale(p.kind);
         const iconScale = baseScale.toFixed(2);
         const iconHref = variant || `files/${p.kind}.png`;
         const showLabel = Boolean(named) || p.remove;
         const visibleName = p.remove ? (named ? `remove ${named}` : "remove") : named || fallback;
-        const nameSize = p.labelSize === "lg" ? "lg" : p.labelSize === "sm" || p.labelSize === "xs" ? "sm" : "md";
-        const nameScale = nameSize === "lg" ? 0.7 : nameSize === "sm" ? 0.55 : 0.62;
-        const style = gearKind || variant || grown
-          ? `<Style>
+        const nameSize = p.labelSize === "xl" ? "xl" : p.labelSize === "lg" ? "lg" : p.labelSize === "sm" || p.labelSize === "xs" ? "sm" : "md";
+        const nameScale = nameSize === "xl" ? 1 : nameSize === "lg" ? 0.7 : nameSize === "sm" ? 0.55 : 0.62;
+        const style = `<Style>
           <IconStyle>
             <scale>${iconScale}</scale>
             <hotSpot x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
             <Icon><href>${escapeXml(iconHref)}</href></Icon>
           </IconStyle>
-          <LabelStyle><color>ffffffff</color><colorMode>normal</colorMode><scale>${gearKind && showLabel ? nameScale : 0}</scale></LabelStyle>
-        </Style>`
-          : `<styleUrl>#pt-${p.kind}${showLabel ? "" : "-quiet"}</styleUrl>`;
+          <LabelStyle><color>ffffffff</color><colorMode>normal</colorMode><scale>${showLabel ? nameScale : 0}</scale></LabelStyle>
+        </Style>`;
         const removal = p.remove ? slashXml(pointSlashMarks(p.position)) : "";
         return `      <Placemark>
         <name>${escapeXml(visibleName)}</name>
@@ -1412,8 +1414,14 @@ export async function parsePlantFile(file: File): Promise<
         pedType: kind === "pedestal" && isPedType(storedPed) ? storedPed : "",
         pedRotate: kind === "pedestal" ? pedestalDir(dataValue(pm, "pedRotate")) : 0,
         vaultType: kind === "vault" && isVaultType(storedVault) ? storedVault : "",
-        size: dataValue(pm, "size") === "xl" ? "xl" : "lg",
-        labelSize: (["sm", "lg", "xs"].includes(dataValue(pm, "labelSize")) ? (dataValue(pm, "labelSize") === "xs" ? "sm" : dataValue(pm, "labelSize")) : "md") as "xs" | "sm" | "md" | "lg",
+        size: (() => {
+          const rawSize = dataValue(pm, "size");
+          if (rawSize === "big" || rawSize === "xl") return "big" as const;
+          if (rawSize === "med") return "med" as const;
+          if (rawSize === "std") return "std" as const;
+          return kind === "vault" ? "med" as const : "std" as const;
+        })(),
+        labelSize: (dataValue(pm, "labelSize") === "xl" ? "xl" : dataValue(pm, "labelSize") === "sm" || dataValue(pm, "labelSize") === "xs" ? "sm" : dataValue(pm, "labelSize") === "md" ? "md" : "lg") as "xs" | "sm" | "md" | "lg" | "xl",
       });
     }
   }

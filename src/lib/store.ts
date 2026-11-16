@@ -5,6 +5,7 @@ import type {
   LatLng,
   LineFeature,
   LabelSize,
+  ObjectSize,
   OverlayFeature,
   PlantProject,
   PointFeature,
@@ -43,13 +44,15 @@ interface PlantState extends PlantProject {
   gpsFollow: boolean;
   snapAsk: string | null;
   lineSnap: { lineId: string; at: LatLng; kind: "end" | "cross"; click: LatLng; showDot: boolean } | null;
-  placeBig: boolean;
-  setPlaceBig: (placeBig: boolean) => void;
+  placeSize: ObjectSize;
+  setPlaceSize: (placeSize: ObjectSize) => void;
   labelPlate: boolean;
   setLabelPlate: (labelPlate: boolean) => void;
   labelSize: LabelSize;
+  objectLabelSize: LabelSize;
   fontStep: number;
   setLabelSize: (labelSize: LabelSize) => void;
+  setObjectLabelSize: (objectLabelSize: LabelSize) => void;
   past: Snapshot[];
   future: Snapshot[];
   setTool: (tool: Tool) => void;
@@ -238,7 +241,14 @@ function clampOpacity(value: unknown, fallback: number): number {
 }
 
 function isLabelSize(value: unknown): value is LabelSize {
-  return value === "xs" || value === "sm" || value === "md" || value === "lg";
+  return value === "xs" || value === "sm" || value === "md" || value === "lg" || value === "xl";
+}
+
+function objectSizeOf(kind: PointKind, raw: unknown): ObjectSize {
+  if (raw === "std" || raw === "med" || raw === "big") return raw;
+  if (kind === "vault") return raw === "xl" ? "big" : "med";
+  if (raw === "xl") return "big";
+  return "std";
 }
 
 function isLatLng(value: unknown): value is LatLng {
@@ -268,7 +278,7 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
       footageText: typeof line.footageText === "string" ? line.footageText : "",
       hideLegend: line.hideLegend === true,
       hideFootage: line.hideFootage === true,
-      labelSize: isLabelSize(line.labelSize) ? line.labelSize : "md",
+      labelSize: line.labelSize === "xl" ? "lg" : isLabelSize(line.labelSize) ? line.labelSize : "md",
       name: typeof line.name === "string" ? line.name : "",
       splits: Array.isArray(line.splits) ? line.splits.filter(isLatLng) : [],
       dots: Array.isArray(line.dots)
@@ -310,8 +320,13 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
       pedType: point.kind === "pedestal" && isPedType(point.pedType) ? point.pedType : "",
       pedRotate: point.kind === "pedestal" ? pedestalDir(point.pedRotate) : 0,
       vaultType: point.kind === "vault" && isVaultType(point.vaultType) ? point.vaultType : "",
-      size: canResize(point.kind) && point.size === "xl" ? "xl" : "lg",
-      labelSize: isLabelSize(point.labelSize) ? point.labelSize : "md",
+      size: objectSizeOf(point.kind, point.size),
+      labelSize:
+        point.kind === "passing" && point.labelSize !== "sm" && point.labelSize !== "xl"
+          ? "lg"
+          : point.labelSize === "sm" || point.labelSize === "md" || point.labelSize === "lg" || point.labelSize === "xl"
+            ? point.labelSize
+            : "lg",
     });
   }
   const polygons: PolygonFeature[] = [];
@@ -380,9 +395,10 @@ export const usePlantStore = create<PlantState>()(
       gpsFollow: false,
       snapAsk: null,
       lineSnap: null,
-      placeBig: false,
+      placeSize: "med",
       labelPlate: false,
       labelSize: "md",
+      objectLabelSize: "lg",
       fontStep: 2,
       past: [],
       future: [],
@@ -502,9 +518,10 @@ export const usePlantStore = create<PlantState>()(
         }
         set({ lines });
       },
-      setPlaceBig: (placeBig) => set({ placeBig }),
+      setPlaceSize: (placeSize) => set({ placeSize }),
       setLabelPlate: (labelPlate) => set({ labelPlate }),
-      setLabelSize: (labelSize) => set({ labelSize }),
+      setLabelSize: (labelSize) => set({ labelSize: labelSize === "xl" ? "lg" : labelSize }),
+      setObjectLabelSize: (objectLabelSize) => set({ objectLabelSize }),
       select: (selection) => set({ selection, tool: "select", draft: null }),
       clearSelection: () => set({ selection: null }),
 
@@ -525,8 +542,8 @@ export const usePlantStore = create<PlantState>()(
           pedType: "",
           pedRotate: 0,
           vaultType: "",
-          size: canResize(kind) && s.placeBig ? "xl" : "lg",
-          labelSize: isLabelSize(s.labelSize) ? s.labelSize : "md",
+          size: !canResize(kind) ? "med" : kind === "pedestal" || kind === "vault" ? (s.placeSize === "std" || s.placeSize === "big" || s.placeSize === "med" ? s.placeSize : "med") : s.placeSize === "big" ? "big" : "std",
+          labelSize: s.objectLabelSize === "sm" || s.objectLabelSize === "md" || s.objectLabelSize === "xl" ? s.objectLabelSize : "lg",
         };
         set({
           ...commit(s, { points: [...s.points, point] }),

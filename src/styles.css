@@ -214,6 +214,11 @@
   -webkit-text-stroke: 4px #fff;
 }
 
+.leaflet-tooltip.object-label.size-xl {
+  font-size: 22px;
+  -webkit-text-stroke: 5px #111113;
+}
+
 .footage-label .footage-feet,
 .footage-label .footage-detail {
   display: block;
@@ -244,7 +249,8 @@
 .leaflet-tooltip.object-label.size-xs,
 .leaflet-tooltip.object-label.size-sm,
 .leaflet-tooltip.object-label.size-md,
-.leaflet-tooltip.object-label.size-lg {
+.leaflet-tooltip.object-label.size-lg,
+.leaflet-tooltip.object-label.size-xl {
   -webkit-text-stroke-color: #111113;
   paint-order: stroke fill;
 }

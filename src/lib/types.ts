@@ -36,7 +36,8 @@ export function isCableType(value: unknown): value is CableType {
   return typeof value === "string" && (CABLE_IDS as readonly string[]).includes(value);
 }
 
-export type LabelSize = "xs" | "sm" | "md" | "lg";
+export type LabelSize = "xs" | "sm" | "md" | "lg" | "xl";
+export type ObjectSize = "std" | "med" | "big";
 
 export type PipeRole = "ug" | "width" | "share";
 
@@ -111,7 +112,7 @@ export interface PointFeature {
   pedType: PedType;
   pedRotate: number;
   vaultType: VaultType;
-  size: "lg" | "xl";
+  size: ObjectSize;
   labelSize: LabelSize;
 }
 

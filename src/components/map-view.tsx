@@ -48,11 +48,12 @@ const SAT_LABELS = L.tileLayer(
   { maxZoom: 23, maxNativeZoom: 19, attribution: "" },
 );
 
-function footageIcon(footage: string, detail: string, color: string, plate = false, glow = false, size: "xs" | "sm" | "md" | "lg" = "sm", rotate = 0): L.DivIcon {
+function footageIcon(footage: string, detail: string, color: string, plate = false, glow = false, size: "xs" | "sm" | "md" | "lg" | "xl" = "md", rotate = 0): L.DivIcon {
+  const shown = size === "xl" ? "lg" : size;
   const extra = detail
     ? `<span class="footage-detail">${escapeHtml(detail)}</span>`
     : "";
-  const classes = ["footage-label", plate ? "plate" : "", glow ? "glow" : "", `size-${size}`].filter(Boolean).join(" ");
+  const classes = ["footage-label", plate ? "plate" : "", glow ? "glow" : "", `size-${shown}`].filter(Boolean).join(" ");
   const turn = `transform:translate(-50%,-50%) rotate(${rotate}deg)`;
   return L.divIcon({
     className: classes,
@@ -67,7 +68,7 @@ function labelTurn(map: L.Map, from: LatLng, to: LatLng, text: string, size: str
   const b = map.latLngToContainerPoint([to.lat, to.lng]);
   const len = Math.hypot(b.x - a.x, b.y - a.y);
   const bearing = (Math.atan2(b.x - a.x, a.y - b.y) * 180) / Math.PI;
-  const charW = size === "lg" ? 10.7 : size === "md" ? 8 : size === "sm" ? 7.3 : 7.3;
+  const charW = size === "xl" ? 14 : size === "lg" ? 10.7 : size === "md" ? 8 : 7.3;
   const along = len >= Math.max(text.length, 1) * charW + 8;
   return readableRotation(along ? bearing : bearing + 90);
 }
@@ -107,7 +108,7 @@ function bindName(
   color: string,
   side: LabelSide = "top",
   kind?: PointKind,
-  size: "xs" | "sm" | "md" | "lg" = "sm",
+  size: "xs" | "sm" | "md" | "lg" | "xl" = "lg",
 ) {
   const label = text.trim();
   if (!label) return;
@@ -1016,7 +1017,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
       const marked = pt.kind === "pole" && (pt.riser || (pt.anchors?.length ?? 0) > 0);
       const typedPed = pt.kind === "pedestal" && pt.pedType ? pt.pedType : "";
       const pedDir = pedestalDir(pt.pedRotate);
-      const scale = canResize(pt.kind) ? objectScale(pt.size) : 1;
+      const scale = canResize(pt.kind) ? objectScale(pt.kind, pt.size) : 1;
       const pedBox = typedPed ? pedestalPixels(typedPed, pedDir) : null;
       const typedVault = pt.kind === "vault" && pt.vaultType === "s" ? "s" : "";
       const vaultBox = typedVault ? vaultPixels() : null;
@@ -1062,7 +1063,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         pointLabelColor(pt.kind),
         pt.labelSide ?? "top",
         pt.kind,
-        pt.labelSize || "md",
+        pt.labelSize || "lg",
       );
       marker.addTo(group);
       if (pt.remove) {
