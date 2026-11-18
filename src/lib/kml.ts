@@ -34,7 +34,7 @@ import {
   pedestalDir,
   vaultColor,
 } from "./presets";
-import { footageSpans, formatFeet, joinMask, parallelPath, offsetBeside, objectSpans, pathFrame, pathFootage, pathMidpoint, reportedFeet, spanShownFeet, squareLine2, pointSlashMarks, slashMarks, slotCableTag, spanParts, calloutAt, spanCalloutDir } from "./geo";
+import { footageSpans, formatFeet, joinMask, parallelPath, offsetBeside, objectSpans, pathFrame, pathFootage, pathMidpoint, reportedFeet, spanShownFeet, squareLine2, pointSlashMarks, slashMarks, slotCableTag, spanParts, calloutAt, calloutFeet, spanCalloutDir, spanCalloutStep } from "./geo";
 import { blobToDataUrl, dataUrlToBytes, pedestalIconDataUrl, pointIconDataUrl, poleVariantDataUrl, vaultIconDataUrl } from "./icons";
 
 function coord(ll: LatLng): string {
@@ -704,7 +704,7 @@ ${slashXml(slashMarks(path))}`;
             const cableNote = line.parallel ? [slotCableTag(line, 1), slotCableTag(line, 2)].filter(Boolean).join("/") : "";
             const boxed = line.callout ? (cableNote ? `${stacked}\n${cableNote}` : stacked) : stacked;
             if (line.callout) {
-              const at = calloutAt(span.labelAt, spanCalloutDir(line.calloutDirs, index));
+              const at = calloutAt(span.labelAt, spanCalloutDir(line.calloutDirs, index), calloutFeet(spanCalloutStep(line.calloutSteps, index)));
               return `${leaderMark(span.labelAt, at, tintHex(hex, 0.45))}\n${textMark(boxed, at, hex, size, true)}`;
             }
             const at = line.parallel ? offsetBeside(span.labelAt, span.from, span.to, 4, -1) : span.labelAt;
@@ -788,6 +788,7 @@ ${slashXml(slashMarks(path))}`;
           line.wreckOut ? `<Data name="wreckOut"><value>1</value></Data>` : "",
           line.callout ? `<Data name="callout"><value>1</value></Data>` : "",
           (line.calloutDirs ?? []).length > 0 ? `<Data name="calloutDirs"><value>${line.calloutDirs.join(",")}</value></Data>` : "",
+          (line.calloutSteps ?? []).some((step) => step > 0) ? `<Data name="calloutSteps"><value>${line.calloutSteps.join(",")}</value></Data>` : "",
           `<Data name="kind"><value>${line.kind}</value></Data>`,
           `<Data name="id"><value>${escapeXml(line.id)}</value></Data>`,
           (line.splits ?? []).length > 0 ? `<Data name="splits"><value>${(line.splits ?? []).map((at) => `${at.lat},${at.lng}`).join(";")}</value></Data>` : "",
@@ -811,7 +812,7 @@ ${slashXml(slashMarks(path))}`;
               if (!mid) return "";
               const size = line.labelSize === "xs" || line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
               if (line.callout) {
-                const at = calloutAt(mid, spanCalloutDir(line.calloutDirs, 0));
+                const at = calloutAt(mid, spanCalloutDir(line.calloutDirs, 0), calloutFeet(spanCalloutStep(line.calloutSteps, 0)));
                 return `${leaderMark(mid, at, tintHex("#e4e4e7", 0.35))}\n${textMark(visibleLine, at, "#e4e4e7", size, true)}`;
               }
               return textMark(visibleLine, mid, "#e4e4e7", size);
@@ -1346,6 +1347,7 @@ export async function parsePlantFile(file: File): Promise<
         wreckOut: dataValue(pm, "wreckOut") === "1",
         callout: dataValue(pm, "callout") === "1",
         calloutDirs: (dataValue(pm, "calloutDirs") || dataValue(pm, "calloutDir")).split(",").map((value) => Number(value)).filter((value) => Number.isFinite(value)),
+        calloutSteps: dataValue(pm, "calloutSteps").split(",").map((value) => Number(value)).filter((value) => Number.isFinite(value)),
       });
       continue;
     }

@@ -95,6 +95,7 @@ export interface LineFeature {
   wreckOut: boolean;
   callout: boolean;
   calloutDirs: number[];
+  calloutSteps: number[];
 }
 
 export type LabelSide = "top" | "bottom" | "left" | "right";

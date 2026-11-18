@@ -84,7 +84,7 @@ interface PlantState extends PlantProject {
   updateLine: (
     id: string,
     patch: Partial<
-      Pick<LineFeature, "notes" | "name" | "parallel" | "joinEnds" | "intoSlot" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "fiberCounts" | "emptyPipe" | "remove" | "fiberUnit" | "overrideFootage" | "footageText" | "hideLegend" | "hideFootage" | "labelSize" | "pipeRoles" | "occupied" | "hideSpan" | "aerialMode" | "strandOnly" | "workOps" | "cableWork" | "wreckOut" | "callout" | "calloutDirs">
+      Pick<LineFeature, "notes" | "name" | "parallel" | "joinEnds" | "intoSlot" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "fiberCounts" | "emptyPipe" | "remove" | "fiberUnit" | "overrideFootage" | "footageText" | "hideLegend" | "hideFootage" | "labelSize" | "pipeRoles" | "occupied" | "hideSpan" | "aerialMode" | "strandOnly" | "workOps" | "cableWork" | "wreckOut" | "callout" | "calloutDirs" | "calloutSteps">
     >,
   ) => void;
   updatePoint: (id: string, patch: Partial<Pick<PointFeature, "name" | "description" | "labelSide" | "riser" | "anchors" | "remove" | "hideLegend" | "pedType" | "pedRotate" | "vaultType" | "size" | "labelSize">>) => void;
@@ -170,7 +170,7 @@ function cableFields(line: Partial<LineFeature> & { cable?: unknown }): Pick<
   };
 }
 
-function aerialFields(line: Partial<LineFeature> & { kind: LineKind; calloutDir?: number }): Pick<LineFeature, "kind" | "aerialMode" | "strandOnly" | "workOps" | "cableWork" | "wreckOut" | "callout" | "calloutDirs"> {
+function aerialFields(line: Partial<LineFeature> & { kind: LineKind; calloutDir?: number }): Pick<LineFeature, "kind" | "aerialMode" | "strandOnly" | "workOps" | "cableWork" | "wreckOut" | "callout" | "calloutDirs" | "calloutSteps"> {
   let kind: LineKind = line.kind;
   let aerialMode: LineFeature["aerialMode"] = line.aerialMode === "work" ? "work" : "new";
   let workOps = Array.isArray(line.workOps) ? line.workOps.filter(isAerialOp) : [];
@@ -193,6 +193,10 @@ function aerialFields(line: Partial<LineFeature> & { kind: LineKind; calloutDir?
     const n = Math.round(Number(value));
     return Number.isFinite(n) ? ((n % 8) + 8) % 8 : 0;
   });
+  const calloutSteps = (Array.isArray(line.calloutSteps) ? line.calloutSteps : []).map((value) => {
+    const n = Math.round(Number(value));
+    return Number.isFinite(n) ? Math.max(0, Math.min(6, n)) : 0;
+  });
   return {
     kind,
     aerialMode,
@@ -202,6 +206,7 @@ function aerialFields(line: Partial<LineFeature> & { kind: LineKind; calloutDir?
     wreckOut: line.wreckOut === true,
     callout: line.callout === true,
     calloutDirs,
+    calloutSteps,
   };
 }
 
@@ -683,6 +688,7 @@ export const usePlantStore = create<PlantState>()(
             wreckOut: false,
             callout: false,
             calloutDirs: [],
+            calloutSteps: [],
           });
           const lines = s.lines.map((existing) => {
             const joins = d.pending.filter((join) => join.targetId === existing.id);

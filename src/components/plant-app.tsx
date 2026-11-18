@@ -74,7 +74,7 @@ import {
   pointPreset,
   snapTargetLabel,
 } from "@/lib/presets";
-import { constrainCardinal, formatFeet, footageSpans, pathFootage, reportedFeet, spanCalloutDir } from "@/lib/geo";
+import { constrainCardinal, formatFeet, footageSpans, pathFootage, reportedFeet, spanCalloutDir, spanCalloutStep } from "@/lib/geo";
 import { isCableType } from "@/lib/types";
 import { buildKmz, downloadBlob, parsePlantFile } from "@/lib/kml";
 import { cn } from "@/lib/utils";
@@ -1258,6 +1258,26 @@ function Inspector({ line, point, polygon, overlay }) {
 								usePlantStore.getState().updateLine(line.id, { calloutDirs: dirs });
 							},
 							children: "→"
+						}), /* @__PURE__ */ jsx("button", {
+							type: "button",
+							className: "rounded-[var(--radius-xs)] border border-border px-2 py-1 text-xs",
+							"aria-label": `Shorten span ${index + 1} callout`,
+							onClick: () => {
+								const steps = Array.from({ length: calloutCount }, (_, i) => spanCalloutStep(line.calloutSteps, i));
+								steps[index] = Math.max(0, steps[index] - 1);
+								usePlantStore.getState().updateLine(line.id, { calloutSteps: steps });
+							},
+							children: "−"
+						}), /* @__PURE__ */ jsx("button", {
+							type: "button",
+							className: "rounded-[var(--radius-xs)] border border-border px-2 py-1 text-xs",
+							"aria-label": `Lengthen span ${index + 1} callout`,
+							onClick: () => {
+								const steps = Array.from({ length: calloutCount }, (_, i) => spanCalloutStep(line.calloutSteps, i));
+								steps[index] = Math.min(6, steps[index] + 1);
+								usePlantStore.getState().updateLine(line.id, { calloutSteps: steps });
+							},
+							children: "+"
 						})]
 					}, index))
 				}) : null,

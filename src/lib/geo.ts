@@ -303,6 +303,17 @@ export function spanCalloutDir(dirs: number[] | undefined, index: number): numbe
   return ((n % 8) + 8) % 8;
 }
 
+export function spanCalloutStep(steps: number[] | undefined, index: number): number {
+  const n = Math.round(Number(steps?.[index] ?? 0));
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(6, n));
+}
+
+export function calloutFeet(step: number): number {
+  const n = spanCalloutStep([step], 0);
+  return Math.round(46 * Math.pow(1.55, n));
+}
+
 function turnDelta(a: number, b: number): number {
   let d = Math.abs(a - b) % 360;
   if (d > 180) d = 360 - d;

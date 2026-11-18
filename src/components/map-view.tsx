@@ -24,7 +24,9 @@ import {
   slotCableTag,
   spanParts,
   calloutAt,
+  calloutFeet,
   spanCalloutDir,
+  spanCalloutStep,
   readableRotation,
   slashMarks,
 } from "@/lib/geo";
@@ -868,7 +870,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
           const mid = pathMidpoint(line.path);
           if (mid) {
             const text = line.remove ? `remove ${roadName}` : roadName;
-            const at = line.callout ? calloutAt(mid, spanCalloutDir(line.calloutDirs, 0)) : mid;
+            const at = line.callout ? calloutAt(mid, spanCalloutDir(line.calloutDirs, 0), calloutFeet(spanCalloutStep(line.calloutSteps, 0))) : mid;
             if (line.callout) {
               L.polyline([[mid.lat, mid.lng], [at.lat, at.lng]], {
                 color: tintHex("#e4e4e7", 0.35),
@@ -894,7 +896,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         const detail = [span.showCable ? parts.detail : "", line.callout ? cableNote : ""].filter(Boolean).join(" ");
         const text = `${parts.footage}${detail}`;
         if (line.callout) {
-          const at = calloutAt(span.labelAt, spanCalloutDir(line.calloutDirs, index));
+          const at = calloutAt(span.labelAt, spanCalloutDir(line.calloutDirs, index), calloutFeet(spanCalloutStep(line.calloutSteps, index)));
           L.polyline([[span.labelAt.lat, span.labelAt.lng], [at.lat, at.lng]], {
             color: tintHex(paint, 0.45),
             weight: 1,
