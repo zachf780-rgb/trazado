@@ -767,6 +767,9 @@ ${slashXml(slashMarks(path))}`;
           line.slot2 ? `<Data name="slot2"><value>${escapeXml(line.slot2)}</value></Data>` : "",
           line.fiberCount ? `<Data name="fiberCount"><value>${escapeXml(line.fiberCount)}</value></Data>` : "",
           line.fiberCount2 ? `<Data name="fiberCount2"><value>${escapeXml(line.fiberCount2)}</value></Data>` : "",
+          (line.fiberCounts ?? []).some((count) => count.trim())
+            ? `<Data name="fiberCounts"><value>${escapeXml(line.fiberCounts.map((count) => count.replace(/\D/g, "")).join(","))}</value></Data>`
+            : "",
           line.emptyPipe ? `<Data name="emptyPipe"><value>1</value></Data>` : "",
           line.remove ? `<Data name="remove"><value>1</value></Data>` : "",
           line.fiberUnit === "km" ? `<Data name="fiberUnit"><value>km</value></Data>` : "",
@@ -1312,6 +1315,9 @@ export async function parsePlantFile(file: File): Promise<
         slot2: slot("slot2"),
         fiberCount: dataValue(pm, "fiberCount"),
         fiberCount2: dataValue(pm, "fiberCount2"),
+        fiberCounts: dataValue(pm, "fiberCounts")
+          ? dataValue(pm, "fiberCounts").split(",").map((count) => count.replace(/\D/g, ""))
+          : [],
         emptyPipe: dataValue(pm, "emptyPipe") === "1",
         remove: dataValue(pm, "remove") === "1",
         fiberUnit: dataValue(pm, "fiberUnit") === "km" ? "km" : "ft",

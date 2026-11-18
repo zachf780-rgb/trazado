@@ -73,6 +73,7 @@ export interface LineFeature {
   slot2: SlotChoice;
   fiberCount: string;
   fiberCount2: string;
+  fiberCounts: string[];
   emptyPipe: boolean;
   remove: boolean;
   fiberUnit: "ft" | "km";

@@ -1361,7 +1361,7 @@ export function cableTag(cable: CableType, fiberCount: string): string {
 }
 
 export function cableEntries(
-  line: Pick<LineFeature, "parallel" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2">,
+  line: Pick<LineFeature, "parallel" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2"> & { fiberCounts?: string[] },
 ): { cable: CableType; count: string }[] {
   if (line.parallel) {
     const out: { cable: CableType; count: string }[] = [];
@@ -1373,7 +1373,10 @@ export function cableEntries(
     }
     return out;
   }
-  return line.cables.map((cable) => ({ cable, count: line.fiberCount }));
+  return line.cables.map((cable, index) => ({
+    cable,
+    count: cable === "fiber" ? line.fiberCounts?.[index]?.trim() || line.fiberCount : line.fiberCount,
+  }));
 }
 
 function groupedTags(tags: string[]): string {
@@ -1535,12 +1538,13 @@ export function lineLossParts(
     const low = km * 0.2;
     const high = km * 0.35;
     const counts = [...new Set(fibers.map((entry) => entry.count.trim()).filter(Boolean))];
-    parts.push({
-      label: counts.length === 1 ? `${counts[0]}ct` : "fiber",
-      feet,
-      db: (low + high) / 2,
-      text: formatDbRange(low, high),
-    });
+    if (counts.length === 0) {
+      parts.push({ label: "fiber", feet, db: (low + high) / 2, text: formatDbRange(low, high) });
+    } else {
+      for (const count of counts) {
+        parts.push({ label: `${count}ct`, feet, db: (low + high) / 2, text: formatDbRange(low, high) });
+      }
+    }
   }
   for (const entry of cableEntries(line)) {
     if (entry.cable === "fiber") continue;

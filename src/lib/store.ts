@@ -84,7 +84,7 @@ interface PlantState extends PlantProject {
   updateLine: (
     id: string,
     patch: Partial<
-      Pick<LineFeature, "notes" | "name" | "parallel" | "joinEnds" | "intoSlot" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "emptyPipe" | "remove" | "fiberUnit" | "overrideFootage" | "footageText" | "hideLegend" | "hideFootage" | "labelSize" | "pipeRoles" | "occupied" | "hideSpan" | "aerialMode" | "strandOnly" | "workOps" | "cableWork" | "wreckOut" | "callout" | "calloutDirs">
+      Pick<LineFeature, "notes" | "name" | "parallel" | "joinEnds" | "intoSlot" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "fiberCounts" | "emptyPipe" | "remove" | "fiberUnit" | "overrideFootage" | "footageText" | "hideLegend" | "hideFootage" | "labelSize" | "pipeRoles" | "occupied" | "hideSpan" | "aerialMode" | "strandOnly" | "workOps" | "cableWork" | "wreckOut" | "callout" | "calloutDirs">
     >,
   ) => void;
   updatePoint: (id: string, patch: Partial<Pick<PointFeature, "name" | "description" | "labelSide" | "riser" | "anchors" | "remove" | "hideLegend" | "pedType" | "pedRotate" | "vaultType" | "size" | "labelSize">>) => void;
@@ -140,7 +140,7 @@ function countText(value: unknown): string {
 
 function cableFields(line: Partial<LineFeature> & { cable?: unknown }): Pick<
   LineFeature,
-  "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2"
+  "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "fiberCounts"
 > {
   const parallel = line.parallel === true;
   const allowed = new Set(allowedCables(line.kind));
@@ -166,6 +166,7 @@ function cableFields(line: Partial<LineFeature> & { cable?: unknown }): Pick<
     cables: parallel ? [slot1, slot2].filter(isCable) : counted,
     fiberCount: countText(line.fiberCount),
     fiberCount2: countText(line.fiberCount2),
+    fiberCounts: counted.map((id, index) => (id === "fiber" ? countText(Array.isArray(line.fiberCounts) ? line.fiberCounts[index] : "") : "")),
   };
 }
 
@@ -660,6 +661,7 @@ export const usePlantStore = create<PlantState>()(
             slot2: "",
             fiberCount: "",
             fiberCount2: "",
+            fiberCounts: [],
             emptyPipe: false,
             remove: false,
             fiberUnit: "ft",

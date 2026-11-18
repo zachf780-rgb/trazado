@@ -1491,11 +1491,17 @@ function Inspector({ line, point, polygon, overlay }) {
 										});
 										keptWork.set(id, list);
 									});
+									const keptCounts: string[] = [];
+									line.cables.forEach((id, index) => {
+										if (id === "fiber") keptCounts.push((line.fiberCounts?.[index] ?? "").replace(/\D/g, ""));
+									});
+									const fiberCounts = cables.map((id) => (id === "fiber" ? keptCounts.shift() ?? "" : ""));
 									const cableWork = cables.map((id) => keptWork.get(id)?.shift() ?? { op: line.kind === "aerial-new" && line.aerialMode === "work" ? "re" as const : "" as const, existing: true, wreck: false });
 									usePlantStore.getState().updateLine(line.id, {
 										cables,
 										pipeRoles,
 										cableWork,
+										fiberCounts,
 										strandOnly: cables.length > 0 ? false : line.strandOnly
 									});
 								},
@@ -1514,6 +1520,7 @@ function Inspector({ line, point, polygon, overlay }) {
 								slot2: "",
 								fiberCount: "",
 								fiberCount2: "",
+								fiberCounts: [],
 								emptyPipe: false
 							}),
 							children: "Strand"
@@ -1535,7 +1542,8 @@ function Inspector({ line, point, polygon, overlay }) {
 					children: alignPipeRoles(line.cables, line.pipeRoles).map((role, index) => {
 						const id = line.cables[index];
 						const base = cableChoices(line.kind).find((choice) => choice.id === id)?.label ?? "";
-						const name = id === "fiber" && line.fiberCount ? `${line.fiberCount}ct` : base;
+						const countText = id === "fiber" ? line.fiberCounts?.[index]?.trim() || line.fiberCount : "";
+						const name = id === "fiber" && countText ? `${countText}ct` : base;
 						const bore = linePreset(line.kind).short;
 						return /* @__PURE__ */ jsxs("div", {
 							className: "flex items-center gap-1",
@@ -1567,7 +1575,8 @@ function Inspector({ line, point, polygon, overlay }) {
 					children: alignCableWork(line.cables.length, line.cableWork).map((work, index) => {
 						const id = line.cables[index];
 						const base = cableChoices(line.kind).find((choice) => choice.id === id)?.label ?? "";
-						const name = id === "fiber" && line.fiberCount ? `${line.fiberCount}ct` : base;
+						const countText = id === "fiber" ? line.fiberCounts?.[index]?.trim() || line.fiberCount : "";
+						const name = id === "fiber" && countText ? `${countText}ct` : base;
 						const setWork = (patch: Partial<typeof work>) => {
 							const cableWork = alignCableWork(line.cables.length, line.cableWork).map((item, i) => i === index ? { ...item, ...patch } : item);
 							usePlantStore.getState().updateLine(line.id, { cableWork });
@@ -1627,19 +1636,39 @@ function Inspector({ line, point, polygon, overlay }) {
 						onChange: (e) => usePlantStore.getState().updateLine(line.id, { hideSpan: e.target.checked })
 					}), "Span off legend"]
 				}) : null,
-				!line.parallel && line.cables.includes("fiber") ? /* @__PURE__ */ jsxs("label", {
-					className: "mt-2 flex items-center gap-2 text-xs",
-					children: [
-						"Fiber count",
-						/* @__PURE__ */ jsx(Input, {
-							className: "h-7 w-20 px-2 text-xs",
-							inputMode: "numeric",
-							placeholder: "ct",
-							"aria-label": "Fiber count",
-							value: line.fiberCount,
-							onChange: (e) => usePlantStore.getState().updateLine(line.id, { fiberCount: e.target.value.replace(/\D/g, "").slice(0, 4) })
-						})
-					]
+				!line.parallel && line.cables.includes("fiber") ? /* @__PURE__ */ jsx("div", {
+					className: "mt-2 space-y-1",
+					children: line.cables.map((id, index) => {
+						if (id !== "fiber") return null;
+						const fibers = line.cables.filter((cable) => cable === "fiber").length;
+						const which = line.cables.slice(0, index + 1).filter((cable) => cable === "fiber").length;
+						const first = line.cables.indexOf("fiber") === index;
+						const own = (line.fiberCounts?.[index] ?? "").replace(/\D/g, "");
+						const shown = first ? line.fiberCount : own || line.fiberCount;
+						return /* @__PURE__ */ jsxs("label", {
+							className: "flex items-center gap-2 text-xs",
+							children: [
+								fibers > 1 ? `Fiber ${which} count` : "Fiber count",
+								/* @__PURE__ */ jsx(Input, {
+									className: "h-7 w-20 px-2 text-xs",
+									inputMode: "numeric",
+									placeholder: "ct",
+									"aria-label": fibers > 1 ? `Fiber ${which} count` : "Fiber count",
+									value: shown,
+									onChange: (e) => {
+										const next = e.target.value.replace(/\D/g, "").slice(0, 4);
+										if (first) {
+											usePlantStore.getState().updateLine(line.id, { fiberCount: next });
+											return;
+										}
+										const fiberCounts = line.cables.map((cable, i) => (cable === "fiber" ? (line.fiberCounts?.[i] ?? "").replace(/\D/g, "") : ""));
+										fiberCounts[index] = next === line.fiberCount ? "" : next;
+										usePlantStore.getState().updateLine(line.id, { fiberCounts });
+									}
+								})
+							]
+						}, `fiber-count-${index}`);
+					})
 				}) : null,
 				line.kind !== "drop" && (line.parallel ? line.slot1 === "fiber" || line.slot2 === "fiber" : line.cables.includes("fiber")) ? /* @__PURE__ */ jsxs("div", {
 					className: "mt-2 flex items-center gap-1",
