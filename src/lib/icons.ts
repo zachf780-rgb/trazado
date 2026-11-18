@@ -264,6 +264,44 @@ export function poleVariantDataUrl(riser: boolean, anchors: number[], size = 128
   return url;
 }
 
+export async function stampRemoveSlashes(dataUrl: string): Promise<string> {
+  if (!dataUrl || typeof document === "undefined") return dataUrl;
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error("icon"));
+    el.src = dataUrl;
+  });
+  const canvas = document.createElement("canvas");
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return dataUrl;
+  ctx.drawImage(img, 0, 0);
+  const s = Math.min(img.width, img.height);
+  const bar = Math.max(4, Math.round(s * 0.11));
+  ctx.save();
+  ctx.translate(img.width / 2, img.height / 2);
+  ctx.rotate(-Math.PI / 4);
+  const span = Math.hypot(img.width, img.height);
+  ctx.lineCap = "butt";
+  for (const offset of [-s * 0.24, 0, s * 0.24]) {
+    const stroke = (color: string, width: number) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(-span, offset);
+      ctx.lineTo(span, offset);
+      ctx.stroke();
+    };
+    stroke("#111113", bar + 4);
+    stroke("#ffffff", bar + 2);
+    stroke("#dc2626", bar);
+  }
+  ctx.restore();
+  return canvas.toDataURL("image/png");
+}
+
 export function dataUrlToBytes(dataUrl: string): { bytes: Uint8Array; ext: string } {
   const match = /^data:image\/([\w+.-]+);base64,(.+)$/.exec(dataUrl);
   if (!match) return { bytes: new Uint8Array(), ext: "png" };

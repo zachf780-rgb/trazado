@@ -19,6 +19,7 @@ import type {
 import { EMPTY_PROJECT, LINE_KINDS, CABLE_IDS, isAerialOp, isCableType, type CableWork, type LineKind } from "./types";
 import { uid } from "./utils";
 import { constrainCardinal, haversineFeet, lineLossNote, normalizeBox, notesWithLoss } from "./geo";
+import { optimizeLayout } from "./optimize";
 import { defaultPointName, allowedCables, allowsEmpty, canResize, isLineKind, isPedType, isPipeRole, isPointKind, isSnapTarget, isVaultType, pedestalDir } from "./presets";
 
 const HISTORY_LIMIT = 60;
@@ -53,6 +54,8 @@ interface PlantState extends PlantProject {
   fontStep: number;
   setLabelSize: (labelSize: LabelSize) => void;
   setObjectLabelSize: (objectLabelSize: LabelSize) => void;
+  setAllFonts: (target: "line" | "point", size: LabelSize) => void;
+  optimizeLabels: () => boolean;
   past: Snapshot[];
   future: Snapshot[];
   setTool: (tool: Tool) => void;
@@ -528,6 +531,29 @@ export const usePlantStore = create<PlantState>()(
       setLabelPlate: (labelPlate) => set({ labelPlate }),
       setLabelSize: (labelSize) => set({ labelSize: labelSize === "xl" ? "lg" : labelSize }),
       setObjectLabelSize: (objectLabelSize) => set({ objectLabelSize }),
+      setAllFonts: (target, size) => {
+        const s = get();
+        if (target === "line") {
+          const labelSize = size === "xl" || size === "xs" ? "md" : size;
+          set({
+            ...commit(s, { lines: s.lines.map((line) => ({ ...line, labelSize })) }),
+            labelSize,
+          });
+          return;
+        }
+        const labelSize = size === "xs" ? "lg" : size;
+        set({
+          ...commit(s, { points: s.points.map((point) => ({ ...point, labelSize })) }),
+          objectLabelSize: labelSize,
+        });
+      },
+      optimizeLabels: () => {
+        const s = get();
+        const next = optimizeLayout(s.lines, s.points, s.view);
+        if (!next) return false;
+        set(commit(s, next));
+        return true;
+      },
       select: (selection) => set({ selection, tool: "select", draft: null }),
       clearSelection: () => set({ selection: null }),
 

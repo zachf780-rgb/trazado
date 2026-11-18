@@ -501,16 +501,54 @@ export function PlantApp() {
 									children: basemap === "satellite" ? "Satellite" : "Streets"
 								})]
 							}),
-							/* @__PURE__ */ jsx(Button, {
-								variant: usePlantStore((s) => s.labelPlate) ? "default" : "ghost",
-								size: "sm",
-								onClick: () => {
-									const on = usePlantStore.getState().labelPlate;
-									usePlantStore.getState().setLabelPlate(!on);
-								},
-								"aria-pressed": usePlantStore((s) => s.labelPlate),
-								children: "Label box"
-							}),
+							/* @__PURE__ */ jsxs(DropdownMenu, { children: [/* @__PURE__ */ jsx(DropdownMenuTrigger, {
+								asChild: true,
+								children: /* @__PURE__ */ jsx(Button, {
+									variant: "ghost",
+									size: "sm",
+									children: "Labels"
+								})
+							}), /* @__PURE__ */ jsxs(DropdownMenuContent, {
+								align: "end",
+								className: "w-64",
+								children: [
+									/* @__PURE__ */ jsx(DropdownMenuItem, {
+										onSelect: () => {
+											const on = usePlantStore.getState().labelPlate;
+											usePlantStore.getState().setLabelPlate(!on);
+										},
+										children: [usePlantStore((s) => s.labelPlate) ? /* @__PURE__ */ jsx(Check, { className: "size-4" }) : null, "Label box"]
+									}),
+									/* @__PURE__ */ jsx(DropdownMenuItem, {
+										onSelect: () => {
+											const changed = usePlantStore.getState().optimizeLabels();
+											toast.success(changed ? "Labels adjusted for this zoom" : "Labels already clear at this zoom");
+										},
+										children: "Optimize labels"
+									}),
+									/* @__PURE__ */ jsx(DropdownMenuSeparator, {}),
+									/* @__PURE__ */ jsx(DropdownMenuLabel, { children: "Cable label size" }),
+									/* @__PURE__ */ jsx("div", {
+										className: "flex flex-wrap gap-1 px-2 pb-2",
+										children: [["sm", "Small"], ["md", "Medium"], ["lg", "Large"]].map(([size, label]) => /* @__PURE__ */ jsx("button", {
+											type: "button",
+											className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", lines.length > 0 && lines.every((line) => (line.labelSize || "md") === size) ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
+											onClick: () => usePlantStore.getState().setAllFonts("line", size),
+											children: label
+										}, size))
+									}),
+									/* @__PURE__ */ jsx(DropdownMenuLabel, { children: "Object label size" }),
+									/* @__PURE__ */ jsx("div", {
+										className: "flex flex-wrap gap-1 px-2 pb-2",
+										children: [["sm", "Small"], ["md", "Medium"], ["lg", "Large"], ["xl", "Extra large"]].map(([size, label]) => /* @__PURE__ */ jsx("button", {
+											type: "button",
+											className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", points.length > 0 && points.every((point) => (point.labelSize || "lg") === size) ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
+											onClick: () => usePlantStore.getState().setAllFonts("point", size),
+											children: label
+										}, size))
+									})
+								]
+							})] }),
 							/* @__PURE__ */ jsx(Separator, {
 								orientation: "vertical",
 								className: "hidden h-6 sm:block"

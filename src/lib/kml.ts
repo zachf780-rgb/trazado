@@ -34,8 +34,8 @@ import {
   pedestalDir,
   vaultColor,
 } from "./presets";
-import { footageSpans, formatFeet, joinMask, parallelPath, offsetBeside, objectSpans, pathFrame, pathFootage, pathMidpoint, reportedFeet, spanShownFeet, squareLine2, pointSlashMarks, slashMarks, slotCableTag, spanParts, calloutAt, calloutFeet, spanCalloutDir, spanCalloutStep } from "./geo";
-import { blobToDataUrl, dataUrlToBytes, pedestalIconDataUrl, pointIconDataUrl, poleVariantDataUrl, vaultIconDataUrl } from "./icons";
+import { footageSpans, formatFeet, joinMask, parallelPath, offsetBeside, objectSpans, pathFrame, pathFootage, pathMidpoint, reportedFeet, spanShownFeet, squareLine2, slashMarks, slotCableTag, spanParts, calloutAt, calloutFeet, spanCalloutDir, spanCalloutStep } from "./geo";
+import { blobToDataUrl, dataUrlToBytes, pedestalIconDataUrl, pointIconDataUrl, poleVariantDataUrl, stampRemoveSlashes, vaultIconDataUrl } from "./icons";
 
 function coord(ll: LatLng): string {
   return `${ll.lng},${ll.lat},0`;
@@ -412,20 +412,37 @@ function legendPng(lines: LineFeature[], points: PointFeature[]): string {
 
 function outlinedLabelDataUrl(text: string, color: string, plate: boolean, fontSize = 64, outline = "#ffffff"): { url: string; w: number; h: number; fontSize: number } {
   const drawn = text.split("\n").map((line) => line.trim()).filter(Boolean);
-  const lines = drawn.length > 0 ? drawn : [text];
+  const source = drawn.length > 0 ? drawn : [text];
   if (typeof document === "undefined") return { url: "", w: 32, h: 32, fontSize };
   const font = `700 ${fontSize}px "IBM Plex Mono", ui-monospace, monospace`;
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   if (!ctx) return { url: "", w: 32, h: 32, fontSize };
   ctx.font = font;
-  const width = Math.max(...lines.map((line) => ctx.measureText(line).width), 8);
+  // Google Earth shrinks icons once a side passes about 128px, which makes long
+  // "remove" and aerial labels look smaller than the other footage labels.
+  const maxWidth = 96;
+  const lines: string[] = [];
+  for (const raw of source) {
+    const words = raw.split(/\s+/).filter(Boolean);
+    let current = "";
+    for (const word of words) {
+      const next = current ? `${current} ${word}` : word;
+      if (current && ctx.measureText(next).width > maxWidth) {
+        lines.push(current);
+        current = word;
+      } else current = next;
+    }
+    if (current) lines.push(current);
+  }
+  const shown = lines.length > 0 ? lines : source;
+  const width = Math.max(...shown.map((line) => ctx.measureText(line).width), 8);
   const stroke = Math.max(2, Math.round(fontSize * 0.2));
   const padX = stroke + Math.max(2, Math.round(fontSize * 0.1));
   const padY = stroke + Math.max(2, Math.round(fontSize * 0.06));
   const lineH = fontSize + stroke;
   const w = Math.ceil(width + padX * 2);
-  const h = Math.ceil(lines.length * lineH + padY * 2);
+  const h = Math.ceil(shown.length * lineH + padY * 2);
   canvas.width = w;
   canvas.height = h;
   ctx.clearRect(0, 0, w, h);
@@ -443,7 +460,7 @@ function outlinedLabelDataUrl(text: string, color: string, plate: boolean, fontS
   ctx.lineWidth = stroke;
   ctx.strokeStyle = outline;
   ctx.fillStyle = color;
-  lines.forEach((line, index) => {
+  shown.forEach((line, index) => {
     const y = padY + lineH * index + lineH / 2;
     ctx.strokeText(line, w / 2, y);
     ctx.fillText(line, w / 2, y);
@@ -469,18 +486,18 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
   const poleFiles = new Map<string, string>();
   const pedFiles = new Map<string, string>();
   const vaultFiles = new Map<string, string>();
-  const plateFiles = new Map<string, string>();
+  const plateFiles = new Map<string, { href: string; w: number; h: number }>();
   function textMark(text: string, at: LatLng, hex: string, size: LabelSize = "md", boxed = false, outline = "#ffffff"): string {
     const px = size === "xl" ? 22 : size === "lg" ? 16 : size === "sm" || size === "xs" ? 11 : 12;
     const plate = boxed || labelPlate;
     const key = `${px}|${plate ? "p" : "n"}|${hex}|${outline}|${text}`;
-    let href = plateFiles.get(key);
-    if (!href) {
-      const drawn = outlinedLabelDataUrl(text, hex, plate, px, outline);
+    let drawn = plateFiles.get(key);
+    if (!drawn) {
+      const art = outlinedLabelDataUrl(text, hex, plate, px, outline);
       const name = `label-${plateFiles.size + 1}.png`;
-      files!.file(name, dataUrlToBytes(drawn.url).bytes);
-      href = `files/${name}`;
-      plateFiles.set(key, href);
+      files!.file(name, dataUrlToBytes(art.url).bytes);
+      drawn = { href: `files/${name}`, w: art.w, h: art.h };
+      plateFiles.set(key, drawn);
     }
     return `      <Placemark>
         <name></name>
@@ -489,7 +506,7 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
           <IconStyle>
             <scale>1</scale>
             <hotSpot x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
-            <Icon><href>${escapeXml(href)}</href></Icon>
+            <Icon><href>${escapeXml(drawn.href)}</href><gx:w>${drawn.w}</gx:w><gx:h>${drawn.h}</gx:h></Icon>
           </IconStyle>
           <LabelStyle><scale>0</scale></LabelStyle>
         </Style>
@@ -550,6 +567,23 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
         vaultFiles.set(name, `files/${name}`);
       }
     }
+  }
+
+  const removeIcons = new Map<string, string>();
+  for (const point of project.points) {
+    if (!point.remove) continue;
+    const art =
+      point.kind === "pole" && (point.riser || point.anchors.length > 0)
+        ? poleVariantDataUrl(point.riser, point.anchors)
+        : point.kind === "pedestal" && isPedType(point.pedType)
+          ? pedestalIconDataUrl(point.pedType, pedestalDir(point.pedRotate))
+          : point.kind === "vault" && isVaultType(point.vaultType)
+            ? vaultIconDataUrl(point.vaultType)
+            : pointIconDataUrl(point.kind);
+    const stamped = await stampRemoveSlashes(art);
+    const name = `remove-${point.id.replace(/[^a-z0-9_-]/gi, "") || removeIcons.size}.png`;
+    files.file(name, dataUrlToBytes(stamped).bytes);
+    removeIcons.set(point.id, `files/${name}`);
   }
 
   const legendUrl = legendPng(project.lines, project.points);
@@ -923,7 +957,7 @@ ${inner}
                     : 0.8
                 : pointIconScale(p.kind);
         const iconScale = baseScale.toFixed(2);
-        const iconHref = variant || `files/${p.kind}.png`;
+        const iconHref = (p.remove && removeIcons.get(p.id)) || variant || `files/${p.kind}.png`;
         const showLabel = Boolean(named) || p.remove;
         const visibleName = p.remove ? (named ? `remove ${named}` : "remove") : named || fallback;
         const nameSize = p.labelSize === "xl" ? "xl" : p.labelSize === "lg" ? "lg" : p.labelSize === "sm" || p.labelSize === "xs" ? "sm" : "md";
@@ -936,15 +970,13 @@ ${inner}
           </IconStyle>
           <LabelStyle><color>ffffffff</color><colorMode>normal</colorMode><scale>${showLabel ? nameScale : 0}</scale></LabelStyle>
         </Style>`;
-        const removal = p.remove ? slashXml(pointSlashMarks(p.position)) : "";
         return `      <Placemark>
         <name>${escapeXml(visibleName)}</name>
         ${kmlDescription(p.description)}
         <ExtendedData>${data}</ExtendedData>
         ${style}
         <Point><coordinates>${coord(p.position)}</coordinates></Point>
-      </Placemark>
-${removal}`;
+      </Placemark>`;
       })
       .join("\n");
     return `    <Folder>
