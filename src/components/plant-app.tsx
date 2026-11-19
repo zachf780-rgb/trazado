@@ -1313,6 +1313,15 @@ function Inspector({ line, point, polygon, overlay }) {
 							children: [/* @__PURE__ */ jsx("input", {
 								type: "checkbox",
 								className: "size-3.5 accent-white",
+								checked: line.hideFootage === true,
+								onChange: (e) => usePlantStore.getState().updateLine(line.id, { hideFootage: e.target.checked })
+							}), "Hide footage"]
+						}),
+						/* @__PURE__ */ jsxs("label", {
+							className: "mt-2 flex items-center gap-2 text-xs",
+							children: [/* @__PURE__ */ jsx("input", {
+								type: "checkbox",
+								className: "size-3.5 accent-white",
 								checked: line.existing === true,
 								onChange: (e) => usePlantStore.getState().updateLine(line.id, { existing: e.target.checked, mark: e.target.checked ? line.mark : "" })
 							}), "Existing"]

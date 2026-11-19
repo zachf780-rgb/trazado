@@ -221,20 +221,22 @@ function jobsFor(line: LineFeature, points: PointFeature[]): SpanJob[] {
   const shown = reportedFeet(line);
   const gear = gearOf(points);
   const cableNote = line.parallel ? [slotCableTag(line, 1), slotCableTag(line, 2)].filter(Boolean).join("/") : "";
-  return footageSpans(line.path, gear, line.splits ?? [], (line.dots ?? []).map((dot) => dot.at)).map((span, index) => {
+  return footageSpans(line.path, gear, line.splits ?? [], (line.dots ?? []).map((dot) => dot.at)).flatMap((span, index) => {
     const parts = spanParts(spanShownFeet(span.feet, measured, shown), line);
     const detail = span.showCable ? parts.detail : "";
-    return {
+    const footage = line.hideFootage ? "" : parts.footage;
+    if (!footage && !detail) return [];
+    return [{
       line,
       index,
       at: span.labelAt,
       from: span.from,
       to: span.to,
-      footage: parts.footage,
+      footage,
       detail,
       calloutDetail: [detail, cableNote].filter(Boolean).join(" "),
       size,
-    };
+    }];
   });
 }
 

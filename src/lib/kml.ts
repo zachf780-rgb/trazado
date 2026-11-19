@@ -747,7 +747,9 @@ ${slashXml(slashMarks(path))}`;
             const paint = linePaint(line);
             const hex = paint;
             const size = cableLabelSize(line.labelSize);
-            const stacked = span.showCable && parts.detail ? `${parts.footage}\n${parts.detail}` : parts.footage;
+            const footage = line.hideFootage ? "" : parts.footage;
+            const stacked = span.showCable && parts.detail ? (footage ? `${footage}\n${parts.detail}` : parts.detail) : footage;
+            if (!stacked) return "";
             const cableNote = line.parallel ? [slotCableTag(line, 1), slotCableTag(line, 2)].filter(Boolean).join("/") : "";
             const boxed = line.callout ? (cableNote ? `${stacked}\n${cableNote}` : stacked) : stacked;
             if (line.callout) {
@@ -757,6 +759,7 @@ ${slashXml(slashMarks(path))}`;
             const at = line.parallel ? offsetBeside(span.labelAt, span.from, span.to, 4, -1) : span.labelAt;
             return textMark(stacked, at, hex, size);
           })
+          .filter(Boolean)
           .join("\n");
         const cableLabels =
           line.kind === "road" || !line.parallel || line.callout

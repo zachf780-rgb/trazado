@@ -948,8 +948,10 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         const cableNote = line.parallel
           ? [slotCableTag(line, 1), slotCableTag(line, 2)].filter(Boolean).join("/")
           : "";
+        const footage = line.hideFootage ? "" : parts.footage;
         const detail = [span.showCable ? parts.detail : "", line.callout ? cableNote : ""].filter(Boolean).join(" ");
-        const text = `${parts.footage}${detail}`;
+        const text = `${footage}${detail}`;
+        if (!footage && !detail) return;
         if (line.callout) {
           const at = calloutAt(span.labelAt, spanCalloutDir(line.calloutDirs, index), calloutFeet(spanCalloutStep(line.calloutSteps, index)));
           L.polyline([[span.labelAt.lat, span.labelAt.lng], [at.lat, at.lng]], {
@@ -959,7 +961,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
             interactive: false,
           }).addTo(group);
           L.marker([at.lat, at.lng], {
-            icon: footageIcon(parts.footage, detail, paint, true, false, size, 0),
+            icon: footageIcon(footage, detail, paint, true, false, size, 0),
             interactive: false,
             keyboard: false,
             zIndexOffset: 400,
@@ -972,7 +974,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         const offsetFt = mid ? Math.max(8, haversineFeet(mid, { lat: shifted.lat, lng: shifted.lng })) : 8;
         const line1At = line.parallel ? offsetBeside(span.labelAt, span.from, span.to, offsetFt * 0.35, -1) : span.labelAt;
         L.marker([line1At.lat, line1At.lng], {
-          icon: footageIcon(parts.footage, span.showCable ? parts.detail : "", paint, labelPlate, false, size, labelTurn(map, span.from, span.to, text, size)),
+          icon: footageIcon(footage, span.showCable ? parts.detail : "", paint, labelPlate, false, size, labelTurn(map, span.from, span.to, text, size)),
           interactive: false,
           keyboard: false,
           zIndexOffset: 400,
