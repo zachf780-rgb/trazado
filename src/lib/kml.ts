@@ -468,6 +468,18 @@ function outlinedLabelDataUrl(text: string, color: string, plate: boolean, fontS
   return { url: canvas.toDataURL("image/png"), w, h, fontSize };
 }
 
+const CABLE_XL_PX = 28;
+
+export function lineLabelBitmap(text: string, color: string, plate: boolean): { url: string; w: number; h: number } {
+  const art = outlinedLabelDataUrl(text, color, plate, CABLE_XL_PX, "#ffffff");
+  return { url: art.url, w: art.w, h: art.h };
+}
+
+function cableLabelSize(size: string | undefined): LabelSize {
+  if (size === "xs" || size === "sm" || size === "lg" || size === "xl") return size;
+  return "md";
+}
+
 function kmlPaint(hex: string, opacity: number): string {
   const { r, g, b } = hexToRgb(/^#[0-9a-f]{6}$/i.test(hex) ? hex : "#d4d4d8");
   const alpha = Math.round(Math.min(1, Math.max(0, opacity)) * 255);
@@ -488,7 +500,7 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
   const vaultFiles = new Map<string, string>();
   const plateFiles = new Map<string, { href: string; w: number; h: number }>();
   function textMark(text: string, at: LatLng, hex: string, size: LabelSize = "md", boxed = false, outline = "#ffffff"): string {
-    const px = size === "xl" ? 22 : size === "lg" ? 16 : size === "sm" || size === "xs" ? 11 : 12;
+    const px = size === "xl" ? CABLE_XL_PX : size === "lg" ? 16 : size === "sm" || size === "xs" ? 11 : 12;
     const plate = boxed || labelPlate;
     const key = `${px}|${plate ? "p" : "n"}|${hex}|${outline}|${text}`;
     let drawn = plateFiles.get(key);
@@ -733,7 +745,7 @@ ${slashXml(slashMarks(path))}`;
             const parts = spanParts(shownFeet, line);
             const paint = linePaint(line);
             const hex = paint;
-            const size = line.labelSize === "xs" || line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
+            const size = cableLabelSize(line.labelSize);
             const stacked = span.showCable && parts.detail ? `${parts.footage}\n${parts.detail}` : parts.footage;
             const cableNote = line.parallel ? [slotCableTag(line, 1), slotCableTag(line, 2)].filter(Boolean).join("/") : "";
             const boxed = line.callout ? (cableNote ? `${stacked}\n${cableNote}` : stacked) : stacked;
@@ -753,7 +765,7 @@ ${slashXml(slashMarks(path))}`;
                   const paint = linePaint(line);
                   const hex = paint;
                   const twinHex = tintHex(hex, 0.42);
-                  const size = line.labelSize === "xs" || line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
+                  const size = cableLabelSize(line.labelSize);
                   const frame1 = pathFrame(span.slice, 0.42);
                   const frame2 = pathFrame(span.slice, 0.58);
                   const tag1 = slotCableTag(line, 1);
@@ -844,7 +856,7 @@ ${slashXml(slashMarks(path))}`;
           ? (() => {
               const mid = pathMidpoint(line.path);
               if (!mid) return "";
-              const size = line.labelSize === "xs" || line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
+              const size = cableLabelSize(line.labelSize);
               if (line.callout) {
                 const at = calloutAt(mid, spanCalloutDir(line.calloutDirs, 0), calloutFeet(spanCalloutStep(line.calloutSteps, 0)));
                 return `${leaderMark(mid, at, tintHex("#e4e4e7", 0.35))}\n${textMark(visibleLine, at, "#e4e4e7", size, true)}`;
@@ -1358,7 +1370,7 @@ export async function parsePlantFile(file: File): Promise<
         footageText: dataValue(pm, "footageText"),
         hideLegend: dataValue(pm, "hideLegend") === "1",
         hideFootage: dataValue(pm, "hideFootage") === "1",
-        labelSize: storedSize === "xs" || storedSize === "sm" || storedSize === "lg" ? storedSize : "md",
+        labelSize: storedSize === "xs" || storedSize === "sm" || storedSize === "lg" || storedSize === "xl" ? storedSize : "md",
         name: dataValue(pm, "lineName") || (kind === "road" ? name : ""),
         splits,
         dots,

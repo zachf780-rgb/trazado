@@ -17,14 +17,14 @@ type Rect = { x: number; y: number; w: number; h: number };
 const SIDES: LabelSide[] = ["top", "right", "bottom", "left"];
 
 function fontPx(size: string): number {
-  if (size === "xl") return 22;
+  if (size === "xl") return 28;
   if (size === "lg") return 16;
   if (size === "sm" || size === "xs") return 11;
   return 12;
 }
 
 function charW(size: string): number {
-  if (size === "xl") return 14;
+  if (size === "xl") return 17;
   if (size === "lg") return 10.7;
   if (size === "md") return 8;
   return 7.3;
@@ -196,7 +196,7 @@ function gearOf(points: PointFeature[]): LatLng[] {
 }
 
 function jobsFor(line: LineFeature, points: PointFeature[]): SpanJob[] {
-  const size = line.labelSize === "xs" || line.labelSize === "sm" || line.labelSize === "lg" ? line.labelSize : "md";
+  const size = line.labelSize === "xs" || line.labelSize === "sm" || line.labelSize === "lg" || line.labelSize === "xl" ? line.labelSize : "md";
   if (line.kind === "road") {
     const name = line.name.trim();
     const mid = line.path.length >= 2 ? pathMidpoint(line.path) : null;

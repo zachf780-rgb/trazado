@@ -154,6 +154,11 @@
   -webkit-text-stroke: 3px #fff;
 }
 
+.leaflet-div-icon.footage-label.size-xl {
+  background: transparent !important;
+  border: none !important;
+}
+
 .footage-label.size-lg .footage-stack,
 .footage-label.size-lg .footage-feet,
 .footage-label.size-lg .footage-detail,

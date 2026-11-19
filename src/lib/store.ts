@@ -296,7 +296,7 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
       footageText: typeof line.footageText === "string" ? line.footageText : "",
       hideLegend: line.hideLegend === true,
       hideFootage: line.hideFootage === true,
-      labelSize: line.labelSize === "xl" ? "lg" : isLabelSize(line.labelSize) ? line.labelSize : "md",
+      labelSize: isLabelSize(line.labelSize) ? line.labelSize : "md",
       name: typeof line.name === "string" ? line.name : "",
       splits: Array.isArray(line.splits) ? line.splits.filter(isLatLng) : [],
       dots: Array.isArray(line.dots)
@@ -557,12 +557,12 @@ export const usePlantStore = create<PlantState>()(
       },
       setPlaceSize: (placeSize) => set({ placeSize }),
       setLabelPlate: (labelPlate) => set({ labelPlate }),
-      setLabelSize: (labelSize) => set({ labelSize: labelSize === "xl" ? "lg" : labelSize }),
+      setLabelSize: (labelSize) => set({ labelSize: isLabelSize(labelSize) ? labelSize : "md" }),
       setObjectLabelSize: (objectLabelSize) => set({ objectLabelSize }),
       setAllFonts: (target, size) => {
         const s = get();
         if (target === "line") {
-          const labelSize = size === "xl" || size === "xs" ? "md" : size;
+          const labelSize = size === "xs" ? "sm" : size;
           set({
             ...commit(s, { lines: s.lines.map((line) => ({ ...line, labelSize })) }),
             labelSize,

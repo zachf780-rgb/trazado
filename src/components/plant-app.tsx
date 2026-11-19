@@ -538,7 +538,7 @@ export function PlantApp() {
 									/* @__PURE__ */ jsx(DropdownMenuLabel, { children: "Cable label size" }),
 									/* @__PURE__ */ jsx("div", {
 										className: "flex flex-wrap gap-1 px-2 pb-2",
-										children: [["sm", "Small"], ["md", "Medium"], ["lg", "Large"]].map(([size, label]) => /* @__PURE__ */ jsx("button", {
+										children: [["sm", "Small"], ["md", "Medium"], ["lg", "Large"], ["xl", "Extra large"]].map(([size, label]) => /* @__PURE__ */ jsx("button", {
 											type: "button",
 											className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", lines.length > 0 && lines.every((line) => (line.labelSize || "md") === size) ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
 											onClick: () => usePlantStore.getState().setAllFonts("line", size),
@@ -1220,11 +1220,11 @@ function Inspector({ line, point, polygon, overlay }) {
 							className: "mr-1 text-xs text-muted-foreground",
 							children: "Font"
 						}),
-						[["sm", "S"], ["md", "M"], ["lg", "L"]].map(([size, label]) => /* @__PURE__ */ jsx("button", {
+						[["sm", "S"], ["md", "M"], ["lg", "L"], ["xl", "XL"]].map(([size, label]) => /* @__PURE__ */ jsx("button", {
 							type: "button",
 							className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", (line.labelSize || "md") === size ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
 							onClick: () => {
-								const next = size === "xs" || size === "sm" || size === "lg" ? size : "md";
+								const next = size === "xs" || size === "sm" || size === "lg" || size === "xl" ? size : "md";
 								usePlantStore.getState().setLabelSize(next);
 								usePlantStore.getState().updateLine(line.id, { labelSize: next });
 							},

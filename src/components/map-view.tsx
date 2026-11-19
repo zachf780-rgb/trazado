@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { usePlantStore } from "@/lib/store";
+import { lineLabelBitmap } from "@/lib/kml";
 import { canResize, isLineTool, isPointTool, isSnapTarget, joinsAtEnds, lineOpacity, linePaint, linePreset, lineWidth, objectScale, pedestalDir, pedestalPixels, pointLabelColor, tintHex, vaultPixels } from "@/lib/presets";
 import {
   constrainCardinal,
@@ -51,15 +52,23 @@ const SAT_LABELS = L.tileLayer(
 );
 
 function footageIcon(footage: string, detail: string, color: string, plate = false, glow = false, size: "xs" | "sm" | "md" | "lg" | "xl" = "md", rotate = 0): L.DivIcon {
-  const shown = size === "xl" ? "lg" : size;
+  const turn = `translate(-50%,-50%) rotate(${rotate}deg)`;
+  if (size === "xl") {
+    const art = lineLabelBitmap(detail ? `${footage}\n${detail}` : footage, color, plate);
+    return L.divIcon({
+      className: "footage-label size-xl",
+      html: `<img alt="" draggable="false" src="${art.url}" width="${art.w}" height="${art.h}" style="display:block;transform:rotate(${rotate}deg);transform-origin:center center" />`,
+      iconSize: [art.w, art.h],
+      iconAnchor: [art.w / 2, art.h / 2],
+    });
+  }
   const extra = detail
     ? `<span class="footage-detail">${escapeHtml(detail)}</span>`
     : "";
-  const classes = ["footage-label", plate ? "plate" : "", glow ? "glow" : "", `size-${shown}`].filter(Boolean).join(" ");
-  const turn = `transform:translate(-50%,-50%) rotate(${rotate}deg)`;
+  const classes = ["footage-label", plate ? "plate" : "", glow ? "glow" : "", `size-${size}`].filter(Boolean).join(" ");
   return L.divIcon({
     className: classes,
-    html: `<span class="footage-stack" style="color:${color};${turn}"><span class="footage-feet">${escapeHtml(footage)}</span>${extra}</span>`,
+    html: `<span class="footage-stack" style="color:${color};transform:${turn}"><span class="footage-feet">${escapeHtml(footage)}</span>${extra}</span>`,
     iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
