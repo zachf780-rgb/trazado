@@ -155,7 +155,7 @@ export type Selection =
   | { type: "overlay"; id: string };
 
 export type Draft =
-  | { mode: "line"; kind: LineKind; path: LatLng[]; declined: { lineId: string; at: LatLng }[]; pending: { at: LatLng; targetId: string; kind: "end" | "cross"; showDot: boolean }[] }
+  | { mode: "line"; kind: LineKind; path: LatLng[]; declined: { lineId: string; at: LatLng }[]; pending: { at: LatLng; targetId: string; kind: "end" | "cross"; showDot: boolean; measureAt?: LatLng }[] }
   | { mode: "polygon"; path: LatLng[] }
   | { mode: "overlay"; name: string; dataUrl: string; a: LatLng | null };
 

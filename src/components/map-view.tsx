@@ -13,6 +13,7 @@ import {
   formatFootageLabel,
   haversineFeet,
   parallelPath,
+  parallelOffsetFt,
   pathFootage,
   pathMidpoint,
   reportedFeet,
@@ -227,6 +228,14 @@ function pointIcon(kind: PointKind, scale = 1): L.Icon {
   return icon;
 }
 
+function snapLines(
+  lines: ReturnType<typeof usePlantStore.getState>["lines"],
+  points: ReturnType<typeof usePlantStore.getState>["points"],
+) {
+  const targets = points.filter((point) => isSnapTarget(point.kind)).map((point) => point.position);
+  return lines.map((line) => ({ ...line, targets }));
+}
+
 function tryLineSnap(map: L.Map, ll: LatLng): boolean {
   const s = usePlantStore.getState();
   if (!isLineTool(s.tool) || s.tool === "road") return false;
@@ -235,7 +244,7 @@ function tryLineSnap(map: L.Map, ll: LatLng): boolean {
   const hit = lineSnapTarget(
     ll,
     from,
-    s.lines,
+    snapLines(s.lines, s.points),
     (point) => {
       const px = map.latLngToContainerPoint([point.lat, point.lng]);
       return { x: px.x, y: px.y };
@@ -279,9 +288,10 @@ function paintParallel(
     if (!line.parallel || line.path.length < 2) continue;
     const mid = line.path[Math.floor(line.path.length / 2)] ?? line.path[0];
     if (!mid) continue;
-    const origin = map.latLngToContainerPoint([mid.lat, mid.lng]);
-    const shifted = map.containerPointToLatLng(L.point(origin.x + 8, origin.y));
-    const offsetFt = Math.max(8, haversineFeet(mid, { lat: shifted.lat, lng: shifted.lng }));
+    const offsetFt = parallelOffsetFt(line.path, (ll) => {
+      const px = map.latLngToContainerPoint([ll.lat, ll.lng]);
+      return { x: px.x, y: px.y };
+    });
     placed.push({
       id: line.id,
       kind: line.kind,
@@ -1198,7 +1208,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         const hit = lineSnapTarget(
           pointer,
           last ?? null,
-          usePlantStore.getState().lines,
+          snapLines(usePlantStore.getState().lines, usePlantStore.getState().points),
           (point) => {
             const px = map.latLngToContainerPoint([point.lat, point.lng]);
             return { x: px.x, y: px.y };

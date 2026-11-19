@@ -18,7 +18,7 @@ import type {
 } from "./types";
 import { EMPTY_PROJECT, LINE_KINDS, CABLE_IDS, isAerialOp, isCableType, type CableWork, type LineKind } from "./types";
 import { uid } from "./utils";
-import { constrainCardinal, haversineFeet, lineLossNote, normalizeBox, notesWithLoss } from "./geo";
+import { constrainCardinal, haversineFeet, lineLossNote, normalizeBox, notesWithLoss, pathFootage, roundFeet } from "./geo";
 import { optimizeLayout } from "./optimize";
 import { defaultPointName, allowedCables, allowsEmpty, canResize, isLineKind, isPedType, isPipeRole, isPointKind, isSnapTarget, isVaultType, pedestalDir } from "./presets";
 
@@ -44,7 +44,7 @@ interface PlantState extends PlantProject {
   gps: GpsFix | null;
   gpsFollow: boolean;
   snapAsk: string | null;
-  lineSnap: { lineId: string; at: LatLng; kind: "end" | "cross"; click: LatLng; showDot: boolean } | null;
+  lineSnap: { lineId: string; at: LatLng; kind: "end" | "cross"; click: LatLng; showDot: boolean; measureAt?: LatLng } | null;
   eggTool: boolean;
   eggPlacing: boolean;
   eggOpen: boolean;
@@ -499,7 +499,13 @@ export const usePlantStore = create<PlantState>()(
           return;
         }
         const kind = s.tool;
-        const pending = { at: ask.at, targetId: ask.lineId, kind: ask.kind, showDot: ask.showDot };
+        const pending = {
+          at: ask.at,
+          targetId: ask.lineId,
+          kind: ask.kind,
+          showDot: ask.showDot,
+          measureAt: ask.measureAt,
+        };
         if (!s.draft || s.draft.mode !== "line") {
           set({
             lineSnap: null,
@@ -707,6 +713,11 @@ export const usePlantStore = create<PlantState>()(
             }
           }
           if (path.length < 2) return false;
+          const measured = path.map((point) => {
+            const swap = d.pending.find((join) => join.measureAt && haversineFeet(join.at, point) < 2);
+            return swap?.measureAt && haversineFeet(swap.measureAt, point) >= 1 ? swap.measureAt : point;
+          });
+          const overridden = measured.some((point, index) => point !== path[index]);
           const created: LineFeature = stampLoss({
             id: uid(),
             kind: d.kind,
@@ -724,8 +735,8 @@ export const usePlantStore = create<PlantState>()(
             emptyPipe: false,
             remove: false,
             fiberUnit: "ft",
-            overrideFootage: false,
-            footageText: "",
+            overrideFootage: overridden,
+            footageText: overridden ? String(roundFeet(pathFootage(measured))) : "",
             hideLegend: false,
             hideFootage: false,
             labelSize: isLabelSize(s.labelSize) ? s.labelSize : "md",
@@ -750,7 +761,7 @@ export const usePlantStore = create<PlantState>()(
             return {
               ...existing,
               dots: [...(existing.dots ?? []), ...joins.map((join) => ({ at: join.at, peer: created.id, show: join.showDot }))],
-              splits: [...(existing.splits ?? []), ...joins.filter((join) => join.kind === "cross").map((join) => join.at)],
+              splits: [...(existing.splits ?? []), ...joins.filter((join) => join.kind === "cross").map((join) => join.measureAt ?? join.at)],
             };
           });
           set({

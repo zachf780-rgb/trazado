@@ -174,12 +174,41 @@ export interface SnapHit {
   lineId: string;
   at: LatLng;
   kind: "end" | "cross";
+  /** When the snap is on a double's second line, measure footage to this primary point. */
+  measureAt?: LatLng;
+}
+
+export function parallelOffsetFt(path: LatLng[], project: (ll: LatLng) => { x: number; y: number }): number {
+  const mid = path[Math.floor(path.length / 2)] ?? path[0];
+  if (!mid) return 12;
+  const probe = { lat: mid.lat, lng: mid.lng + 1e-4 };
+  const a = project(mid);
+  const b = project(probe);
+  const px = Math.hypot(b.x - a.x, b.y - a.y);
+  if (px < 0.25) return 12;
+  return Math.max(8, (haversineFeet(mid, probe) / px) * 8);
+}
+
+function projectOntoPath(path: LatLng[], point: LatLng): LatLng {
+  let best = path[0] ?? point;
+  let bestD = Infinity;
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i];
+    const b = path[i + 1];
+    if (!a || !b) continue;
+    const proj = projectOnSegment(a, b, point);
+    if (proj.dist < bestD) {
+      bestD = proj.dist;
+      best = proj.at;
+    }
+  }
+  return best;
 }
 
 export function lineSnapTarget(
   click: LatLng,
   from: LatLng | null,
-  lines: { id: string; kind: string; path: LatLng[] }[],
+  lines: { id: string; kind: string; path: LatLng[]; parallel?: boolean; joinEnds?: boolean; targets?: LatLng[] }[],
   project: (ll: LatLng) => { x: number; y: number },
   declined: { lineId: string; at: LatLng }[],
 ): SnapHit | null {
@@ -203,6 +232,51 @@ export function lineSnapTarget(
       const p = project(end);
       const d = Math.hypot(p.x - clickPx.x, p.y - clickPx.y);
       if (d <= 18) consider({ lineId: line.id, at: end, kind: "end" }, d, 0);
+    }
+    if (line.parallel) {
+      const offsetFt = parallelOffsetFt(line.path, project);
+      const twin = parallelPath(line.path, offsetFt, joinMask(line.path, line.targets ?? [], line.joinEnds === true, []));
+      if (twin.length < 2) {
+        /* second line is not drawn */
+      } else {
+      const primaryStart = line.path[0];
+      const primaryEnd = line.path[line.path.length - 1];
+      const twinStart = twin[0];
+      const twinEnd = twin[twin.length - 1];
+      const twinEnds: [LatLng, LatLng][] = [];
+      if (primaryStart && twinStart) twinEnds.push([twinStart, primaryStart]);
+      if (primaryEnd && twinEnd && twinEnd !== twinStart) twinEnds.push([twinEnd, primaryEnd]);
+      for (const [end, measureAt] of twinEnds) {
+        if (haversineFeet(end, measureAt) < 1) continue;
+        const p = project(end);
+        const d = Math.hypot(p.x - clickPx.x, p.y - clickPx.y);
+        if (d <= 18) consider({ lineId: line.id, at: end, kind: "end", measureAt }, d, 0);
+      }
+      if (from && haversineFeet(from, click) >= 3) {
+        const twinIncoming = bearingDeg(from, click);
+        for (let i = 0; i < twin.length - 1; i++) {
+          const a = twin[i];
+          const b = twin[i + 1];
+          if (!a || !b) continue;
+          const pa = project(a);
+          const pb = project(b);
+          const dx = pb.x - pa.x;
+          const dy = pb.y - pa.y;
+          const len2 = dx * dx + dy * dy;
+          if (len2 < 4) continue;
+          let t = ((clickPx.x - pa.x) * dx + (clickPx.y - pa.y) * dy) / len2;
+          t = Math.max(0, Math.min(1, t));
+          if (t < 0.08 || t > 0.92) continue;
+          const d = Math.hypot(pa.x + dx * t - clickPx.x, pa.y + dy * t - clickPx.y);
+          if (d > 16) continue;
+          let delta = Math.abs(twinIncoming - bearingDeg(a, b)) % 180;
+          if (delta > 90) delta = 180 - delta;
+          if (delta < 65) continue;
+          const at = { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+          consider({ lineId: line.id, at, kind: "cross", measureAt: projectOntoPath(line.path, at) }, d, 1);
+        }
+      }
+      }
     }
     if (!from || haversineFeet(from, click) < 3) continue;
     const incoming = bearingDeg(from, click);
