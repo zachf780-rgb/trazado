@@ -5,7 +5,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { usePlantStore } from "@/lib/store";
 import { lineLabelBitmap } from "@/lib/kml";
-import { canResize, isLineTool, isPointTool, isSnapTarget, joinsAtEnds, lineOpacity, linePaint, linePreset, lineWidth, objectScale, pedestalDir, pedestalPixels, pointLabelColor, tintHex, vaultPixels } from "@/lib/presets";
+import { canResize, isLineTool, isPointTool, isSnapTarget, joinsAtEnds, lineOpacity, linePaint, linePreset, lineWidth, lineWeightOf, objectScale, pedestalDir, pedestalPixels, pointLabelColor, tintHex, vaultPixels } from "@/lib/presets";
 import {
   constrainCardinal,
   footageSpans,
@@ -121,6 +121,7 @@ function bindName(
   side: LabelSide = "top",
   kind?: PointKind,
   size: "xs" | "sm" | "md" | "lg" | "xl" = "lg",
+  polygon = false,
 ) {
   const label = text.trim();
   if (!label) return;
@@ -142,7 +143,7 @@ function bindName(
     direction: side,
     offset,
     opacity: 1,
-    className: `object-label size-${size}`,
+    className: polygon ? `object-label poly-${size}` : `object-label size-${size}`,
     interactive: false,
   });
 }
@@ -322,7 +323,7 @@ function paintParallel(
       path.map((p) => [p.lat, p.lng] as [number, number]),
       {
         color: tintHex(linePaint(line), 0.42),
-        weight: lineWidth(line.kind),
+        weight: lineWeightOf(line),
         opacity: 1,
         lineJoin: "round",
         lineCap: "round",
@@ -372,6 +373,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
   const draft = usePlantStore((s) => s.draft);
   const pointer = usePlantStore((s) => s.pointer);
   const tool = usePlantStore((s) => s.tool);
+  const lineInk = usePlantStore((s) => s.lineInk);
   const shift = usePlantStore((s) => s.shift);
   const flyTo = usePlantStore((s) => s.flyTo);
   const hydrated = usePlantStore((s) => s.hydrated);
@@ -835,7 +837,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         usePlantStore.getState().select({ type: "polygon", id: poly.id });
       });
       layer.addTo(group);
-      bindName(layer, poly.name, "#d4d4d8");
+      bindName(layer, poly.name, "#d4d4d8", "top", undefined, poly.labelSize || "sm", true);
     }
 
     for (const line of lines) {
@@ -849,7 +851,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         opacity: 0,
         interactive: true,
       });
-      const width = lineWidth(line.kind);
+      const width = lineWeightOf(line);
       if (selected) {
         L.polyline(latlngs, {
           color: "#e8eaee",
@@ -1195,8 +1197,8 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         L.polyline(
           path.map((p) => [p.lat, p.lng] as [number, number]),
           {
-            color: linePreset(draft.kind).color,
-            weight: lineWidth(draft.kind),
+            color: draft.kind === "line" ? lineInk.color : linePreset(draft.kind).color,
+            weight: draft.kind === "line" ? lineInk.weight : lineWidth(draft.kind),
             opacity: lineOpacity(draft.kind),
             dashArray: extra.length ? "6 6" : undefined,
           },
@@ -1240,7 +1242,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
           const feet = haversineFeet(last, tip);
           if (feet >= 1) {
             L.marker([(last.lat + tip.lat) / 2, (last.lng + tip.lng) / 2], {
-              icon: footageIcon(formatFootageLabel(feet), "", linePreset(draft.kind).color, labelPlate),
+              icon: footageIcon(formatFootageLabel(feet), "", draft.kind === "line" ? lineInk.color : linePreset(draft.kind).color, labelPlate),
               interactive: false,
               zIndexOffset: 1200,
             }).addTo(group);
@@ -1286,7 +1288,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         }).addTo(group);
       }
     }
-  }, [draft, pointer, shift, points, labelPlate]);
+  }, [draft, pointer, shift, points, labelPlate, lineInk]);
 
   useEffect(() => {
     const map = mapRef.current;

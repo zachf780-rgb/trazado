@@ -17,6 +17,7 @@ import {
   ALL_POINT_PRESETS,
   linePaint,
   lineWidth,
+  lineWeightOf,
   pointIconScale,
   isLineKind,
   isPointKind,
@@ -791,7 +792,7 @@ ${slashXml(slashMarks(path))}`;
         <Style>
           <LineStyle>
             <color>${offsetColor}</color>
-            <width>${lineWidth(line.kind)}</width>
+            <width>${lineWeightOf(line)}</width>
           </LineStyle>
         </Style>
         <LineString>
@@ -840,15 +841,19 @@ ${slashXml(slashMarks(path))}`;
           (line.splits ?? []).length > 0 ? `<Data name="splits"><value>${(line.splits ?? []).map((at) => `${at.lat},${at.lng}`).join(";")}</value></Data>` : "",
           (line.dots ?? []).length > 0 ? `<Data name="dots"><value>${(line.dots ?? []).map((dot) => `${dot.at.lat},${dot.at.lng},${escapeXml(dot.peer)},${dot.show ? 1 : 0}`).join(";")}</value></Data>` : "",
           line.name.trim() ? `<Data name="lineName"><value>${escapeXml(line.name.trim())}</value></Data>` : "",
+          line.kind === "line" && line.stroke ? `<Data name="stroke"><value>${escapeXml(line.stroke)}</value></Data>` : "",
+          line.kind === "line" && line.weight ? `<Data name="weight"><value>${line.weight}</value></Data>` : "",
+          line.existing ? `<Data name="existing"><value>1</value></Data>` : "",
+          line.mark ? `<Data name="mark"><value>${line.mark}</value></Data>` : "",
         ]
           .filter(Boolean)
           .join("");
         const removal = line.remove ? removalXml(line.path) : "";
         const roadName = line.kind === "road" ? line.name.trim() : "";
         const visibleLine = line.remove && roadName ? `remove ${roadName}` : roadName;
-        const lineStyle = line.kind === "road" || (line.kind === "aerial-new" && line.aerialMode === "work")
+        const lineStyle = line.kind === "line" || line.kind === "road" || (line.kind === "aerial-new" && line.aerialMode === "work")
           ? `<Style>
-          <LineStyle><color>${line.kind === "road" ? labelColor : "ff7727db"}</color><width>${lineWidth(line.kind)}</width></LineStyle>
+          <LineStyle><color>${line.kind === "line" ? hexToKmlColor(linePaint(line)) : line.kind === "road" ? labelColor : "ff7727db"}</color><width>${line.kind === "line" ? lineWeightOf(line) : lineWidth(line.kind)}</width></LineStyle>
           <LabelStyle><scale>0</scale></LabelStyle>
         </Style>`
           : `<styleUrl>#line-${line.kind}</styleUrl>`;
@@ -1007,13 +1012,14 @@ ${project.polygons
     const ring = [...poly.path, poly.path[0]].filter(Boolean) as LatLng[];
     const lat = poly.path.reduce((sum, point) => sum + point.lat, 0) / poly.path.length;
     const lng = poly.path.reduce((sum, point) => sum + point.lng, 0) / poly.path.length;
+    const labelScale = poly.labelSize === "xl" ? 1.13 : poly.labelSize === "lg" ? 0.88 : poly.labelSize === "md" ? 0.69 : 0.5;
     const label = poly.name.trim()
       ? `      <Placemark>
         <name>${escapeXml(poly.name.trim())}</name>
         <ExtendedData><Data name="polyLabel"><value>1</value></Data></ExtendedData>
         <Style>
           <IconStyle><scale>0</scale></IconStyle>
-          <LabelStyle><color>ffffffff</color><colorMode>normal</colorMode><scale>0.5</scale></LabelStyle>
+          <LabelStyle><color>ffffffff</color><colorMode>normal</colorMode><scale>${labelScale}</scale></LabelStyle>
         </Style>
         <Point><altitudeMode>clampToGround</altitudeMode><coordinates>${coord({ lat, lng })}</coordinates></Point>
       </Placemark>`
@@ -1026,6 +1032,7 @@ ${project.polygons
           <Data name="fill"><value>${escapeXml(poly.fill || "#64748b")}</value></Data>
           <Data name="strokeOpacity"><value>${poly.strokeOpacity ?? 1}</value></Data>
           <Data name="fillOpacity"><value>${poly.fillOpacity ?? 0.25}</value></Data>
+          ${poly.labelSize && poly.labelSize !== "sm" ? `<Data name="labelSize"><value>${poly.labelSize}</value></Data>` : ""}
         </ExtendedData>
         <Style>
           <LineStyle><color>${kmlPaint(poly.stroke || "#a1a1aa", poly.strokeOpacity ?? 1)}</color><width>2</width></LineStyle>
@@ -1392,6 +1399,10 @@ export async function parsePlantFile(file: File): Promise<
         callout: dataValue(pm, "callout") === "1",
         calloutDirs: (dataValue(pm, "calloutDirs") || dataValue(pm, "calloutDir")).split(",").map((value) => Number(value)).filter((value) => Number.isFinite(value)),
         calloutSteps: dataValue(pm, "calloutSteps").split(",").map((value) => Number(value)).filter((value) => Number.isFinite(value)),
+        stroke: /^#[0-9a-f]{6}$/i.test(dataValue(pm, "stroke")) ? dataValue(pm, "stroke") : "",
+        weight: [1.5, 3, 6].includes(Number(dataValue(pm, "weight"))) ? Number(dataValue(pm, "weight")) : 0,
+        existing: dataValue(pm, "existing") === "1",
+        mark: dataValue(pm, "mark") === "ae" ? "ae" : dataValue(pm, "mark") === "ug" ? "ug" : "",
       });
       continue;
     }
@@ -1422,6 +1433,7 @@ export async function parsePlantFile(file: File): Promise<
           fill: /^#[0-9a-f]{6}$/i.test(fill) ? fill : "#64748b",
           strokeOpacity: Number.isFinite(strokeOpacity) ? strokeOpacity : 1,
           fillOpacity: Number.isFinite(fillOpacity) ? fillOpacity : 0.25,
+          labelSize: dataValue(pm, "labelSize") === "xl" ? "xl" : dataValue(pm, "labelSize") === "lg" ? "lg" : dataValue(pm, "labelSize") === "md" ? "md" : "sm",
         });
       }
       continue;

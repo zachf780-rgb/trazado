@@ -12,6 +12,20 @@ export function lineWidth(kind: LineKind): number {
   return LINE_WIDTH;
 }
 
+export const LINE_INK_COLORS = ["#ffffff", "#facc15", "#fb923c", "#f87171", "#f472b6", "#38bdf8", "#4ade80", "#c084fc", "#a1a1aa"];
+export const LINE_INK_WEIGHTS = [1.5, 3, 6];
+
+export function lineWeightOf(line: { kind: LineKind; weight?: number }): number {
+  if (line.kind !== "line") return lineWidth(line.kind);
+  return LINE_INK_WEIGHTS.includes(Number(line.weight)) ? Number(line.weight) : LINE_WIDTH;
+}
+
+export function linePaint(line: { kind: LineKind; aerialMode?: string; stroke?: string }): string {
+  if (line.kind === "line") return /^#[0-9a-f]{6}$/i.test(line.stroke ?? "") ? (line.stroke as string) : "#ffffff";
+  if (line.kind === "aerial-new" && line.aerialMode === "work") return OVERLASH_PRESET.color;
+  return linePreset(line.kind).color;
+}
+
 export function lineOpacity(kind: LineKind): number {
   return kind === "road" ? 0.5 : 1;
 }
@@ -197,8 +211,8 @@ export const GENERIC_LINE: LinePreset = {
   label: "Line",
   short: "Line",
   fullLabel: "Line",
-  color: "#d4d4d8",
-  kmlColor: "ffd8d4d4",
+  color: "#ffffff",
+  kmlColor: "ffffffff",
 };
 
 export const ROAD_PRESET: LinePreset = {
@@ -220,11 +234,6 @@ export const OVERLASH_PRESET: LinePreset = {
 };
 
 export const AERIAL_SWATCH = "linear-gradient(90deg, #ea580c 0%, #ea580c 42%, #db2777 58%, #db2777 100%)";
-
-export function linePaint(line: { kind: LineKind; aerialMode?: string }): string {
-  if (line.kind === "aerial-new" && line.aerialMode === "work") return OVERLASH_PRESET.color;
-  return linePreset(line.kind).color;
-}
 
 export function alignCableWork(count: number, raw: CableWork[] | undefined): CableWork[] {
   return Array.from({ length: count }, (_, index) => {
@@ -423,7 +432,7 @@ export function plantTotals(
     flex: 0,
   };
   for (const line of lines) {
-    if (!isLineKind(line.kind) || line.kind === "road") continue;
+    if (!isLineKind(line.kind) || line.kind === "road" || line.kind === "line") continue;
     const hideSpan = line.hideSpan === true && (line.kind === "in-4" || line.kind === "in-2" || line.kind === "in-075");
     const spanFeet = line.hideLegend || hideSpan ? 0 : reportedFeet(line);
     const cableFeet = line.hideLegend ? 0 : reportedFeet(line);

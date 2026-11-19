@@ -63,6 +63,9 @@ import {
   joinsAtEnds,
   linePreset,
   linePaint,
+  lineWeightOf,
+  LINE_INK_COLORS,
+  LINE_INK_WEIGHTS,
   pipeAccount,
   plantTotals,
   pedestalColor,
@@ -542,6 +545,16 @@ export function PlantApp() {
 											type: "button",
 											className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", lines.length > 0 && lines.every((line) => (line.labelSize || "md") === size) ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
 											onClick: () => usePlantStore.getState().setAllFonts("line", size),
+											children: label
+										}, size))
+									}),
+									/* @__PURE__ */ jsx(DropdownMenuLabel, { children: "Polygon label size" }),
+									/* @__PURE__ */ jsx("div", {
+										className: "flex flex-wrap gap-1 px-2 pb-2",
+										children: [["sm", "Small"], ["md", "Medium"], ["lg", "Large"], ["xl", "Extra large"]].map(([size, label]) => /* @__PURE__ */ jsx("button", {
+											type: "button",
+											className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", polygons.length > 0 && polygons.every((poly) => (poly.labelSize || "sm") === size) ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
+											onClick: () => usePlantStore.getState().setAllFonts("polygon", size),
 											children: label
 										}, size))
 									}),
@@ -1105,6 +1118,7 @@ function DockButton({ active, onClick, label, swatch, icon, compact }) {
 	});
 }
 function AdvancedMenu({ tool, onTool, onOverlay, compact }) {
+	const ink = usePlantStore((s) => s.lineInk);
 	return /* @__PURE__ */ jsxs(DropdownMenu, { children: [/* @__PURE__ */ jsx(DropdownMenuTrigger, {
 		asChild: true,
 		children: /* @__PURE__ */ jsxs("button", {
@@ -1139,6 +1153,38 @@ function AdvancedMenu({ tool, onTool, onOverlay, compact }) {
 			/* @__PURE__ */ jsxs(DropdownMenuItem, {
 				onSelect: () => onTool("line"),
 				children: [/* @__PURE__ */ jsx(Spline, { className: "size-4" }), " Line"]
+			}),
+			/* @__PURE__ */ jsxs("div", {
+				className: "px-2 pb-2",
+				children: [
+					/* @__PURE__ */ jsx("p", { className: "px-1 pb-1 text-[10px] tracking-wide text-muted-foreground uppercase", children: "Line color" }),
+					/* @__PURE__ */ jsx("div", {
+						className: "flex flex-wrap gap-1 px-1",
+						children: LINE_INK_COLORS.map((color) => /* @__PURE__ */ jsx("button", {
+							type: "button",
+							className: "size-5 rounded-full border",
+							style: { background: color, borderColor: ink.color === color ? "#fff" : color === "#ffffff" ? "#52525b" : "transparent" },
+							"aria-label": `Line color ${color}`,
+							onClick: () => {
+								usePlantStore.getState().setLineInk({ color });
+								if (usePlantStore.getState().tool !== "line") onTool("line");
+							}
+						}, color))
+					}),
+					/* @__PURE__ */ jsx("p", { className: "px-1 pt-2 pb-1 text-[10px] tracking-wide text-muted-foreground uppercase", children: "Thickness" }),
+					/* @__PURE__ */ jsx("div", {
+						className: "flex gap-1 px-1",
+						children: LINE_INK_WEIGHTS.map((weight) => /* @__PURE__ */ jsx("button", {
+							type: "button",
+							className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", ink.weight === weight ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
+							onClick: () => {
+								usePlantStore.getState().setLineInk({ weight });
+								if (usePlantStore.getState().tool !== "line") onTool("line");
+							},
+							children: weight
+						}, weight))
+					})
+				]
 			}),
 			/* @__PURE__ */ jsxs(DropdownMenuItem, {
 				onSelect: () => onTool("polygon"),
@@ -1209,7 +1255,7 @@ function Inspector({ line, point, polygon, overlay }) {
 					children: [
 						line.path.length,
 						" vertices · ",
-						line.kind === "drop" ? "1.5" : line.kind === "road" ? "12" : "3",
+						line.kind === "drop" ? "1.5" : line.kind === "road" ? "12" : line.kind === "line" ? String(lineWeightOf(line)) : "3",
 						"-pt stroke"
 					]
 				}),
@@ -1232,6 +1278,59 @@ function Inspector({ line, point, polygon, overlay }) {
 						}, size))
 					]
 				}),
+				line.kind === "line" ? /* @__PURE__ */ jsxs("div", {
+					className: "mt-2",
+					children: [
+						/* @__PURE__ */ jsx("p", { className: "text-xs text-muted-foreground", children: "Color" }),
+						/* @__PURE__ */ jsx("div", {
+							className: "mt-1 flex flex-wrap gap-1",
+							children: LINE_INK_COLORS.map((color) => /* @__PURE__ */ jsx("button", {
+								type: "button",
+								className: "size-5 rounded-full border",
+								style: { background: color, borderColor: linePaint(line) === color ? "#fff" : color === "#ffffff" ? "#52525b" : "transparent" },
+								"aria-label": `Line color ${color}`,
+								onClick: () => {
+									usePlantStore.getState().setLineInk({ color });
+									usePlantStore.getState().updateLine(line.id, { stroke: color });
+								}
+							}, color))
+						}),
+						/* @__PURE__ */ jsx("p", { className: "mt-2 text-xs text-muted-foreground", children: "Thickness" }),
+						/* @__PURE__ */ jsx("div", {
+							className: "mt-1 flex gap-1",
+							children: LINE_INK_WEIGHTS.map((weight) => /* @__PURE__ */ jsx("button", {
+								type: "button",
+								className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", lineWeightOf(line) === weight ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
+								onClick: () => {
+									usePlantStore.getState().setLineInk({ weight });
+									usePlantStore.getState().updateLine(line.id, { weight });
+								},
+								children: weight
+							}, weight))
+						}),
+						/* @__PURE__ */ jsxs("label", {
+							className: "mt-2 flex items-center gap-2 text-xs",
+							children: [/* @__PURE__ */ jsx("input", {
+								type: "checkbox",
+								className: "size-3.5 accent-white",
+								checked: line.existing === true,
+								onChange: (e) => usePlantStore.getState().updateLine(line.id, { existing: e.target.checked, mark: e.target.checked ? line.mark : "" })
+							}), "Existing"]
+						}),
+						line.existing ? /* @__PURE__ */ jsx("div", {
+							className: "mt-1 flex gap-1",
+							children: [["ae", "AE"], ["ug", "UG"]].map(([id, label]) => /* @__PURE__ */ jsxs("label", {
+								className: "flex items-center gap-1 text-xs",
+								children: [/* @__PURE__ */ jsx("input", {
+									type: "checkbox",
+									className: "size-3.5 accent-white",
+									checked: line.mark === id,
+									onChange: () => usePlantStore.getState().updateLine(line.id, { mark: line.mark === id ? "" : id })
+								}), label]
+							}, id))
+						}) : null
+					]
+				}) : null,
 				line.kind === "aerial-new" ? /* @__PURE__ */ jsxs("div", {
 					className: "mt-3 space-y-1",
 					children: [/* @__PURE__ */ jsx("p", {
@@ -1380,7 +1479,7 @@ function Inspector({ line, point, polygon, overlay }) {
 					value: line.footageText ?? "",
 					onChange: (e) => usePlantStore.getState().updateLine(line.id, { footageText: e.target.value.replace(/[^\d.]/g, "").slice(0, 8) })
 				}) : null,
-				line.kind === "road" ? null : /* @__PURE__ */ jsxs("label", {
+				line.kind === "road" || line.kind === "line" ? null : /* @__PURE__ */ jsxs("label", {
 					className: "mt-3 flex items-center gap-2 text-xs",
 					children: [/* @__PURE__ */ jsx("input", {
 						type: "checkbox",
@@ -1985,6 +2084,21 @@ function Inspector({ line, point, polygon, overlay }) {
 						confirm();
 					}
 				}
+			}), /* @__PURE__ */ jsxs("div", {
+				className: "mt-2 flex flex-wrap items-center gap-1",
+				children: [/* @__PURE__ */ jsx("span", {
+					className: "mr-1 text-xs text-muted-foreground",
+					children: "Font"
+				}), [["sm", "S"], ["md", "M"], ["lg", "L"], ["xl", "XL"]].map(([size, label]) => /* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", (polygon.labelSize || "sm") === size ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
+					onClick: () => {
+						const next = size === "md" || size === "lg" || size === "xl" ? size : "sm";
+						usePlantStore.getState().setPolygonLabelSize(next);
+						usePlantStore.getState().updatePolygon(polygon.id, { labelSize: next });
+					},
+					children: label
+				}, size))]
 			}), /* @__PURE__ */ jsx("p", {
 				className: "mt-3 text-xs text-muted-foreground",
 				children: "Outline"

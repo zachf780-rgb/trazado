@@ -162,6 +162,26 @@
 .footage-label.size-lg .footage-stack,
 .footage-label.size-lg .footage-feet,
 .footage-label.size-lg .footage-detail,
+.leaflet-tooltip.object-label.poly-sm {
+  font-size: 16px;
+  -webkit-text-stroke: 4px #111113;
+}
+
+.leaflet-tooltip.object-label.poly-md {
+  font-size: 22px;
+  -webkit-text-stroke: 5px #111113;
+}
+
+.leaflet-tooltip.object-label.poly-lg {
+  font-size: 28px;
+  -webkit-text-stroke: 6px #111113;
+}
+
+.leaflet-tooltip.object-label.poly-xl {
+  font-size: 36px;
+  -webkit-text-stroke: 7px #111113;
+}
+
 .leaflet-tooltip.object-label.size-lg {
   font-size: 16px;
   -webkit-text-stroke: 4px #fff;

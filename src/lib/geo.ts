@@ -1539,9 +1539,14 @@ export function spanParts(
   feet: number,
   line: Pick<
     LineFeature,
-    "parallel" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "emptyPipe" | "remove" | "kind" | "fiberUnit" | "aerialMode" | "strandOnly" | "workOps" | "cableWork"
+    "parallel" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "emptyPipe" | "remove" | "kind" | "fiberUnit" | "aerialMode" | "strandOnly" | "workOps" | "cableWork" | "existing" | "mark"
   >,
 ): { footage: string; detail: string } {
+  if (line.kind === "line" && line.existing) {
+    const mark = line.mark === "ae" ? "existing AE" : line.mark === "ug" ? "existing UG" : "existing";
+    const footage = formatFootageLabel(feet);
+    return { footage: line.remove ? `remove ${footage}` : footage, detail: mark };
+  }
   if (line.kind === "aerial-new") {
     const fiberOnlyLabel = line.fiberUnit === "km" && cableEntries(line).some((entry) => entry.cable === "fiber");
     const footage = fiberOnlyLabel ? formatKmLabel(feet) : formatFootageLabel(feet);
@@ -1587,6 +1592,8 @@ export function spanLabel(
     | "strandOnly"
     | "workOps"
     | "cableWork"
+    | "existing"
+    | "mark"
   >,
 ): string {
   const { footage, detail } = spanParts(feet, line);

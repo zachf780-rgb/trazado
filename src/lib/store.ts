@@ -60,10 +60,14 @@ interface PlantState extends PlantProject {
   setLabelPlate: (labelPlate: boolean) => void;
   labelSize: LabelSize;
   objectLabelSize: LabelSize;
+  polygonLabelSize: LabelSize;
+  lineInk: { color: string; weight: number };
+  setLineInk: (ink: Partial<{ color: string; weight: number }>) => void;
   fontStep: number;
   setLabelSize: (labelSize: LabelSize) => void;
   setObjectLabelSize: (objectLabelSize: LabelSize) => void;
-  setAllFonts: (target: "line" | "point", size: LabelSize) => void;
+  setPolygonLabelSize: (polygonLabelSize: LabelSize) => void;
+  setAllFonts: (target: "line" | "point" | "polygon", size: LabelSize) => void;
   optimizeLabels: () => boolean;
   past: Snapshot[];
   future: Snapshot[];
@@ -96,13 +100,13 @@ interface PlantState extends PlantProject {
   updateLine: (
     id: string,
     patch: Partial<
-      Pick<LineFeature, "notes" | "name" | "parallel" | "joinEnds" | "intoSlot" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "fiberCounts" | "emptyPipe" | "remove" | "fiberUnit" | "overrideFootage" | "footageText" | "hideLegend" | "hideFootage" | "labelSize" | "pipeRoles" | "occupied" | "hideSpan" | "aerialMode" | "strandOnly" | "workOps" | "cableWork" | "wreckOut" | "callout" | "calloutDirs" | "calloutSteps">
+      Pick<LineFeature, "notes" | "name" | "parallel" | "joinEnds" | "intoSlot" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "fiberCounts" | "emptyPipe" | "remove" | "fiberUnit" | "overrideFootage" | "footageText" | "hideLegend" | "hideFootage" | "labelSize" | "pipeRoles" | "occupied" | "hideSpan" | "aerialMode" | "strandOnly" | "workOps" | "cableWork" | "wreckOut" | "callout" | "calloutDirs" | "calloutSteps" | "stroke" | "weight" | "existing" | "mark">
     >,
   ) => void;
   updatePoint: (id: string, patch: Partial<Pick<PointFeature, "name" | "description" | "labelSide" | "riser" | "anchors" | "remove" | "hideLegend" | "pedType" | "pedRotate" | "vaultType" | "size" | "labelSize">>) => void;
   updatePolygon: (
     id: string,
-    patch: Partial<Pick<PolygonFeature, "name" | "description" | "stroke" | "fill" | "strokeOpacity" | "fillOpacity">>,
+    patch: Partial<Pick<PolygonFeature, "name" | "description" | "stroke" | "fill" | "strokeOpacity" | "fillOpacity" | "labelSize">>,
   ) => void;
   updateOverlay: (id: string, patch: Partial<OverlayFeature>) => void;
   deleteSelection: () => void;
@@ -307,6 +311,10 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
       pipeRoles: Array.isArray(line.pipeRoles) ? line.pipeRoles.filter(isPipeRole) : [],
       occupied: line.occupied === true,
       hideSpan: line.hideSpan === true,
+      stroke: line.kind === "line" && /^#[0-9a-f]{6}$/i.test(line.stroke ?? "") ? line.stroke : "",
+      weight: line.kind === "line" && (line.weight === 1.5 || line.weight === 3 || line.weight === 6) ? line.weight : 0,
+      existing: line.kind === "line" && line.existing === true,
+      mark: line.kind === "line" && (line.mark === "ae" || line.mark === "ug") ? line.mark : "",
       ...aerialFields(line),
     }));
   }
@@ -361,6 +369,7 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
       fill: /^#[0-9a-f]{6}$/i.test(poly.fill ?? "") ? poly.fill : "#64748b",
       strokeOpacity: clampOpacity(poly.strokeOpacity, 1),
       fillOpacity: clampOpacity(poly.fillOpacity, 0.25),
+      labelSize: isLabelSize(poly.labelSize) ? poly.labelSize : "sm",
     });
   }
   const overlays: OverlayFeature[] = [];
@@ -421,6 +430,8 @@ export const usePlantStore = create<PlantState>()(
       labelPlate: false,
       labelSize: "md",
       objectLabelSize: "lg",
+      polygonLabelSize: "sm",
+      lineInk: { color: "#ffffff", weight: 3 },
       fontStep: 2,
       past: [],
       future: [],
@@ -436,6 +447,7 @@ export const usePlantStore = create<PlantState>()(
           selection: null,
           fontStep: 2,
           labelSize: reset ? "md" : isLabelSize(s.labelSize) ? s.labelSize : "md",
+          polygonLabelSize: isLabelSize(s.polygonLabelSize) ? s.polygonLabelSize : "sm",
         });
       },
       setTool: (tool) =>
@@ -565,6 +577,13 @@ export const usePlantStore = create<PlantState>()(
       setLabelPlate: (labelPlate) => set({ labelPlate }),
       setLabelSize: (labelSize) => set({ labelSize: isLabelSize(labelSize) ? labelSize : "md" }),
       setObjectLabelSize: (objectLabelSize) => set({ objectLabelSize }),
+      setPolygonLabelSize: (polygonLabelSize) => set({ polygonLabelSize: isLabelSize(polygonLabelSize) ? polygonLabelSize : "sm" }),
+      setLineInk: (ink) => {
+        const current = get().lineInk;
+        const color = /^#[0-9a-f]{6}$/i.test(ink.color ?? "") ? (ink.color as string) : current.color;
+        const weight = ink.weight === 1.5 || ink.weight === 3 || ink.weight === 6 ? ink.weight : current.weight;
+        set({ lineInk: { color, weight } });
+      },
       setAllFonts: (target, size) => {
         const s = get();
         if (target === "line") {
@@ -572,6 +591,14 @@ export const usePlantStore = create<PlantState>()(
           set({
             ...commit(s, { lines: s.lines.map((line) => ({ ...line, labelSize })) }),
             labelSize,
+          });
+          return;
+        }
+        if (target === "polygon") {
+          const labelSize = size === "xs" ? "sm" : size;
+          set({
+            ...commit(s, { polygons: s.polygons.map((poly) => ({ ...poly, labelSize })) }),
+            polygonLabelSize: labelSize,
           });
           return;
         }
@@ -754,6 +781,10 @@ export const usePlantStore = create<PlantState>()(
             callout: false,
             calloutDirs: [],
             calloutSteps: [],
+            stroke: d.kind === "line" ? s.lineInk.color : "",
+            weight: d.kind === "line" ? s.lineInk.weight : 0,
+            existing: false,
+            mark: "",
           });
           const lines = s.lines.map((existing) => {
             const joins = d.pending.filter((join) => join.targetId === existing.id);
@@ -786,6 +817,7 @@ export const usePlantStore = create<PlantState>()(
             fill: "#64748b",
             strokeOpacity: 1,
             fillOpacity: 0.25,
+            labelSize: isLabelSize(s.polygonLabelSize) ? s.polygonLabelSize : "sm",
           };
           set({
             ...commit(s, { polygons: [...s.polygons, polygon] }),
@@ -978,6 +1010,8 @@ export const usePlantStore = create<PlantState>()(
         view: s.view,
         labelPlate: s.labelPlate,
         labelSize: s.labelSize,
+        polygonLabelSize: s.polygonLabelSize,
+        lineInk: s.lineInk,
         fontStep: s.fontStep,
       }),
     },

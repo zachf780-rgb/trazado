@@ -96,6 +96,10 @@ export interface LineFeature {
   callout: boolean;
   calloutDirs: number[];
   calloutSteps: number[];
+  stroke: string;
+  weight: number;
+  existing: boolean;
+  mark: "" | "ae" | "ug";
 }
 
 export type LabelSide = "top" | "bottom" | "left" | "right";
@@ -127,6 +131,7 @@ export interface PolygonFeature {
   fill: string;
   strokeOpacity: number;
   fillOpacity: number;
+  labelSize: LabelSize;
 }
 
 export interface OverlayFeature {
