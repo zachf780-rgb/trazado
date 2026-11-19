@@ -337,6 +337,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
   const draftRef = useRef<L.LayerGroup | null>(null);
   const gpsRef = useRef<L.LayerGroup | null>(null);
   const searchRef = useRef<L.LayerGroup | null>(null);
+  const eggRef = useRef<L.LayerGroup | null>(null);
   const parallelRef = useRef<L.LayerGroup | null>(null);
   const baseRef = useRef<L.TileLayer>(SAT);
   const labelsRef = useRef<L.TileLayer>(SAT_LABELS);
@@ -358,6 +359,8 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
   const gps = usePlantStore((s) => s.gps);
   const gpsFollow = usePlantStore((s) => s.gpsFollow);
   const searchMark = usePlantStore((s) => s.searchMark);
+  const eggPlacing = usePlantStore((s) => s.eggPlacing);
+  const eggs = usePlantStore((s) => s.eggs);
   const labelPlate = usePlantStore((s) => s.labelPlate);
 
   useEffect(() => {
@@ -393,11 +396,13 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
     const draftLayer = L.layerGroup().addTo(map);
     const gpsLayer = L.layerGroup().addTo(map);
     const searchLayer = L.layerGroup().addTo(map);
+    const eggLayer = L.layerGroup().addTo(map);
     const parallelLayer = L.layerGroup().addTo(map);
     featuresRef.current = features;
     draftRef.current = draftLayer;
     gpsRef.current = gpsLayer;
     searchRef.current = searchLayer;
+    eggRef.current = eggLayer;
     parallelRef.current = parallelLayer;
     mapRef.current = map;
     map.on("zoomend", () => setZoomGen((n) => n + 1));
@@ -412,6 +417,10 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
       const s = usePlantStore.getState();
       const ll = { lat: e.latlng.lat, lng: e.latlng.lng };
       if (s.tool === "select") {
+        if (s.eggPlacing) {
+          s.placeEgg(ll);
+          return;
+        }
         const hit = [...s.overlays].reverse().find((ov) => {
           const south = Math.min(ov.south, ov.north);
           const north = Math.max(ov.south, ov.north);
@@ -613,6 +622,31 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
       }),
     }).addTo(group);
   }, [searchMark]);
+
+  useEffect(() => {
+    const group = eggRef.current;
+    if (!group) return;
+    group.clearLayers();
+    for (const egg of eggs) {
+      const marker = L.marker([egg.lat, egg.lng], {
+        keyboard: false,
+        zIndexOffset: 1600,
+        icon: L.divIcon({
+          className: "egg-marker",
+          html: '<span class="egg-body"></span>',
+          iconSize: [28, 36],
+          iconAnchor: [14, 18],
+        }),
+      });
+      marker.on("click", (event) => {
+        L.DomEvent.stopPropagation(event);
+        const body = marker.getElement()?.querySelector(".egg-body");
+        body?.classList.add("egg-crack");
+        window.setTimeout(() => usePlantStore.getState().openEgg(), 420);
+      });
+      marker.addTo(group);
+    }
+  }, [eggs]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -1238,8 +1272,8 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    map.getContainer().classList.toggle("drawing-cursor", tool !== "select");
-  }, [tool]);
+    map.getContainer().classList.toggle("drawing-cursor", tool !== "select" || eggPlacing);
+  }, [tool, eggPlacing]);
 
   return <div ref={hostRef} className="absolute inset-0 z-0" />;
 }

@@ -102,6 +102,93 @@ type SpanJob = {
   size: string;
 };
 
+function compass(dx: number, dy: number): number {
+  const deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
+  return ((Math.round(deg / 45) % 8) + 8) % 8;
+}
+
+function pointInRect(p: { x: number; y: number }, rect: Rect, pad = 0): boolean {
+  return p.x >= rect.x - pad && p.x <= rect.x + rect.w + pad && p.y >= rect.y - pad && p.y <= rect.y + rect.h + pad;
+}
+
+function segmentsCross(a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }, d: { x: number; y: number }): boolean {
+  const cross = (p: { x: number; y: number }, q: { x: number; y: number }, r: { x: number; y: number }) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const d1 = cross(c, d, a);
+  const d2 = cross(c, d, b);
+  const d3 = cross(a, b, c);
+  const d4 = cross(a, b, d);
+  if (d1 === 0 || d2 === 0 || d3 === 0 || d4 === 0) return false;
+  return d1 * d2 < 0 && d3 * d4 < 0;
+}
+
+function segmentHitsRect(a: { x: number; y: number }, b: { x: number; y: number }, rect: Rect): boolean {
+  if (pointInRect(b, rect)) return true;
+  const corners = [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.w, y: rect.y },
+    { x: rect.x + rect.w, y: rect.y + rect.h },
+    { x: rect.x, y: rect.y + rect.h },
+  ];
+  for (let i = 0; i < 4; i++) {
+    const next = corners[(i + 1) % 4];
+    if (next && segmentsCross(a, b, corners[i]!, next)) return true;
+  }
+  return false;
+}
+
+type Leader = { a: { x: number; y: number }; b: { x: number; y: number } };
+
+function leaderCost(a: { x: number; y: number }, b: { x: number; y: number }, rects: Rect[], leaders: Leader[]): number {
+  let hits = 0;
+  for (const box of rects) {
+    if (pointInRect(a, box, 2)) continue;
+    if (segmentHitsRect(a, b, box)) hits += 1;
+  }
+  for (const other of leaders) {
+    if (segmentsCross(a, b, other.a, other.b)) hits += 1;
+  }
+  return hits;
+}
+
+type Spot = { dir: number; step: number; score: number; rect: Rect; leader: Leader };
+
+function scoreSpot(job: SpanJob, dir: number, zoom: number, taken: Rect[], leaders: Leader[], penalty: number): Spot | null {
+  const anchor = world(job.at, zoom);
+  const size = boxSize(job.footage, job.calloutDetail || job.detail, job.size);
+  const minPx = Math.hypot(size.w, size.h) / 2 + 20;
+  let best: Spot | null = null;
+  for (let step = 0; step <= 6; step++) {
+    const reach = calloutFeet(step) / feetPerPixel(job.at.lat, zoom);
+    if (reach < minPx && step < 6) continue;
+    const at = world(calloutAt(job.at, dir, calloutFeet(step)), zoom);
+    const rect = rectAt(at.x, at.y, size.w, size.h);
+    const area = blocked(rect, taken);
+    const crosses = leaderCost(anchor, at, taken, leaders);
+    const score = area * 100 + crosses * 8000 + step * 3 + penalty;
+    if (!best || score < best.score) best = { dir, step, score, rect, leader: { a: anchor, b: at } };
+  }
+  return best;
+}
+
+function bestSpot(job: SpanJob, options: { dir: number; penalty: number }[], zoom: number, taken: Rect[], leaders: Leader[]): Spot {
+  let best: Spot | null = null;
+  for (const option of options) {
+    const spot = scoreSpot(job, option.dir, zoom, taken, leaders, option.penalty);
+    if (spot && (!best || spot.score < best.score)) best = spot;
+  }
+  if (best) return best;
+  const anchor = world(job.at, zoom);
+  return { dir: 0, step: 6, score: 0, rect: rectAt(anchor.x, anchor.y, 8, 8), leader: { a: anchor, b: anchor } };
+}
+
+function sideOptions(dir: number): { dir: number; penalty: number }[] {
+  return [
+    { dir, penalty: 0 },
+    { dir: (dir + 1) % 8, penalty: 1800 },
+    { dir: (dir + 7) % 8, penalty: 1800 },
+  ];
+}
+
 function gearOf(points: PointFeature[]): LatLng[] {
   return points
     .filter((point) => point.kind === "pedestal" || point.kind === "vault" || point.kind === "mdu" || point.kind === "pole")
@@ -214,39 +301,95 @@ export function optimizeLayout(
   }
   taken.push(...inlineBoxes.values());
 
+  const leaders: Leader[] = [];
   const linePatch = new Map<string, Pick<LineFeature, "callout" | "calloutDirs" | "calloutSteps">>();
-  for (const [id, jobs] of byLine) {
+  const commit = (job: SpanJob, spot: Spot, dirs: number[], steps: number[]) => {
+    dirs[job.index] = spot.dir;
+    steps[job.index] = spot.step;
+    taken.push(spot.rect);
+    leaders.push(spot.leader);
+  };
+  const placeRow = (jobs: SpanJob[], dir: number, skip: number, dirs: number[], steps: number[]) => {
+    let score = 0;
+    const ordered = jobs.filter((job) => job.index !== skip).sort((a, b) => world(a.at, zoom).y - world(b.at, zoom).y);
+    for (const job of ordered) {
+      const spot = bestSpot(job, sideOptions(dir), zoom, taken, leaders);
+      score += spot.score;
+      commit(job, spot, dirs, steps);
+    }
+    return score;
+  };
+
+  const tops: { id: string; job: SpanJob; dir: number; dirs: number[]; steps: number[] }[] = [];
+
+  const orderedIds = [...byLine.keys()].sort((a, b) => {
+    const spanCount = (key: string) => (calloutLine.has(key) ? (byLine.get(key)?.length ?? 0) : -1);
+    return spanCount(b) - spanCount(a);
+  });
+  for (const id of orderedIds) {
+    const jobs = byLine.get(id) ?? [];
     const useCallout = calloutLine.has(id);
     const dirs = jobs.map(() => 0);
     const steps = jobs.map(() => 0);
-    if (useCallout) {
-      jobs.forEach((job, index) => {
-        const anchor = world(job.at, zoom);
-        const size = boxSize(job.footage, job.calloutDetail, job.size);
-        const minPx = Math.hypot(size.w, size.h) / 2 + 20;
-        let best: { dir: number; step: number; area: number; reach: number } | null = null;
-        for (let dir = 0; dir < 8; dir++) {
-          for (let step = 0; step <= 6; step++) {
-            const reach = calloutFeet(step) / feetPerPixel(job.at.lat, zoom);
-            if (reach < minPx && step < 6) continue;
-            const at = world(calloutAt(job.at, dir, calloutFeet(step)), zoom);
-            const rect = rectAt(at.x, at.y, size.w, size.h);
-            const area = blocked(rect, taken);
-            const score = area * 100 + step;
-            const bestScore = best ? best.area * 100 + best.step : Infinity;
-            if (!best || score < bestScore || (score === bestScore && reach < best.reach)) {
-              best = { dir, step, area, reach };
-            }
-          }
-        }
-        const pick = best ?? { dir: 0, step: 6, area: 0, reach: 0 };
-        dirs[index] = pick.dir;
-        steps[index] = pick.step;
-        const at = world(calloutAt(job.at, pick.dir, calloutFeet(pick.step)), zoom);
-        taken.push(rectAt(at.x, at.y, size.w, size.h));
-      });
+    if (useCallout && jobs.length > 0) {
+      let dx = 0;
+      let dy = 0;
+      for (const job of jobs) {
+        const a = world(job.from, zoom);
+        const b = world(job.to, zoom);
+        dx += b.x - a.x;
+        dy += b.y - a.y;
+      }
+      const along = compass(dx, dy);
+      const sideA = (along + 2) % 8;
+      const sideB = (along + 6) % 8;
+      const top = jobs.reduce((best, job) => (world(job.at, zoom).y < world(best.at, zoom).y ? job : best), jobs[0]!);
+      const liftTop = jobs.length > 1 && Math.abs(dy) > Math.abs(dx) && (top.index === 0 || top.index === jobs.length - 1);
+      const savedTaken = taken.slice();
+      const savedLeaders = leaders.slice();
+      const dirsA = dirs.slice();
+      const stepsA = steps.slice();
+      const scoreA = placeRow(jobs, sideA, liftTop ? top.index : -1, dirsA, stepsA);
+      const takenA = taken.slice();
+      const leadersA = leaders.slice();
+      taken.splice(0, taken.length, ...savedTaken);
+      leaders.splice(0, leaders.length, ...savedLeaders);
+      const dirsB = dirs.slice();
+      const stepsB = steps.slice();
+      const scoreB = placeRow(jobs, sideB, liftTop ? top.index : -1, dirsB, stepsB);
+      if (scoreA <= scoreB) {
+        taken.splice(0, taken.length, ...takenA);
+        leaders.splice(0, leaders.length, ...leadersA);
+        dirs.splice(0, dirs.length, ...dirsA);
+        steps.splice(0, steps.length, ...stepsA);
+      } else {
+        dirs.splice(0, dirs.length, ...dirsB);
+        steps.splice(0, steps.length, ...stepsB);
+      }
+      const side = scoreA <= scoreB ? sideA : sideB;
+      if (liftTop) tops.push({ id, job: top, dir: side, dirs, steps });
     }
     linePatch.set(id, { callout: useCallout, calloutDirs: dirs, calloutSteps: steps });
+  }
+
+  for (const item of tops) {
+    const spot = bestSpot(
+      item.job,
+      [
+        { dir: 0, penalty: 0 },
+        { dir: 7, penalty: 700 },
+        { dir: 1, penalty: 700 },
+        { dir: item.dir, penalty: 2600 },
+        { dir: (item.dir + 1) % 8, penalty: 3200 },
+        { dir: (item.dir + 7) % 8, penalty: 3200 },
+      ],
+      zoom,
+      taken,
+      leaders,
+    );
+    commit(item.job, spot, item.dirs, item.steps);
+    const patch = linePatch.get(item.id);
+    if (patch) linePatch.set(item.id, { ...patch, calloutDirs: item.dirs, calloutSteps: item.steps });
   }
 
   const pointPatch = new Map<string, LabelSide>();

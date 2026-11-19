@@ -45,6 +45,15 @@ interface PlantState extends PlantProject {
   gpsFollow: boolean;
   snapAsk: string | null;
   lineSnap: { lineId: string; at: LatLng; kind: "end" | "cross"; click: LatLng; showDot: boolean } | null;
+  eggTool: boolean;
+  eggPlacing: boolean;
+  eggOpen: boolean;
+  eggs: { id: string; lat: number; lng: number }[];
+  unlockEgg: () => void;
+  setEggPlacing: (on: boolean) => void;
+  placeEgg: (at: LatLng) => void;
+  openEgg: () => void;
+  closeEgg: () => void;
   placeSize: ObjectSize;
   setPlaceSize: (placeSize: ObjectSize) => void;
   labelPlate: boolean;
@@ -404,6 +413,10 @@ export const usePlantStore = create<PlantState>()(
       gpsFollow: false,
       snapAsk: null,
       lineSnap: null,
+      eggTool: false,
+      eggPlacing: false,
+      eggOpen: false,
+      eggs: [],
       placeSize: "med",
       labelPlate: false,
       labelSize: "md",
@@ -428,12 +441,27 @@ export const usePlantStore = create<PlantState>()(
       setTool: (tool) =>
         set({
           tool,
+          eggPlacing: false,
           draft: null,
           pointer: null,
           snapAsk: null,
           lineSnap: null,
           selection: tool === "select" ? get().selection : null,
         }),
+      unlockEgg: () => set({ eggTool: true }),
+      setEggPlacing: (eggPlacing) =>
+        set({
+          eggPlacing,
+          tool: "select",
+          draft: null,
+          pointer: null,
+          snapAsk: null,
+          lineSnap: null,
+          selection: null,
+        }),
+      placeEgg: (at) => set({ eggs: [...get().eggs, { id: uid(), lat: at.lat, lng: at.lng }] }),
+      openEgg: () => set({ eggOpen: true }),
+      closeEgg: () => set({ eggOpen: false }),
       setShift: (shift) => set({ shift }),
       setPointer: (pointer) => set({ pointer }),
       setView: (view) => set({ view }),

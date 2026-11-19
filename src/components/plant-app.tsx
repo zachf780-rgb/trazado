@@ -77,6 +77,8 @@ import {
 import { constrainCardinal, formatFeet, footageSpans, pathFootage, reportedFeet, spanCalloutDir, spanCalloutStep } from "@/lib/geo";
 import { isCableType } from "@/lib/types";
 import { buildKmz, downloadBlob, parsePlantFile } from "@/lib/kml";
+import { searchPlaces } from "@/lib/geocode";
+import { BucketRun } from "@/components/bucket-run";
 import { cn } from "@/lib/utils";
 
 function parseDecimalCoord(raw) {
@@ -165,6 +167,9 @@ export function PlantApp() {
 	const polygons = usePlantStore((s) => s.polygons);
 	const overlays = usePlantStore((s) => s.overlays);
 	const projectName = usePlantStore((s) => s.projectName);
+	const eggTool = usePlantStore((s) => s.eggTool);
+	const eggPlacing = usePlantStore((s) => s.eggPlacing);
+	const eggOpen = usePlantStore((s) => s.eggOpen);
 	const past = usePlantStore((s) => s.past);
 	const future = usePlantStore((s) => s.future);
 	const gps = usePlantStore((s) => s.gps);
@@ -253,26 +258,28 @@ export function PlantApp() {
 		const handle = window.setTimeout(async () => {
 			setSearching(true);
 			try {
-				const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query.trim())}&limit=5`);
-				if (!res.ok) throw new Error("Search failed");
-				const data = await res.json();
-				setResults((data.features ?? []).map((f) => {
-					const [lng, lat] = f.geometry.coordinates;
-					const bits = [
-						[f.properties.housenumber, f.properties.street].filter(Boolean).join(" ") || f.properties.name,
-						f.properties.city,
-						f.properties.state,
-						f.properties.country
-					].filter(Boolean);
-					if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-					return {
-						label: bits.join(", ") || "Result",
-						lat,
-						lng
-					};
-				}).filter((row) => row !== null));
+				const rows = await searchPlaces({ data: query.trim() });
+				setResults(rows);
 			} catch {
-				setResults([]);
+				try {
+					const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query.trim())}&limit=5`);
+					if (!res.ok) throw new Error("Search failed");
+					const data = await res.json();
+					setResults((data.features ?? []).map((f) => {
+						const [lng, lat] = f.geometry?.coordinates ?? [];
+						const props = f.properties ?? {};
+						const bits = [
+							[props.housenumber, props.street].filter(Boolean).join(" ") || props.name,
+							props.city,
+							props.state,
+							props.country
+						].filter(Boolean);
+						if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+						return { label: bits.join(", ") || "Result", lat, lng };
+					}).filter(Boolean));
+				} catch {
+					setResults([]);
+				}
 			} finally {
 				setSearching(false);
 				setSearchSettled(true);
@@ -309,9 +316,10 @@ export function PlantApp() {
 	}
 	async function exportKmz() {
 		try {
-			const { blob, filename } = await makeKmz();
+			const { state, blob, filename } = await makeKmz();
 			downloadBlob(blob, filename);
 			toast.success("KMZ downloaded");
+			if ((state.projectName || "").trim().toLowerCase() === "steverino") usePlantStore.getState().unlockEgg();
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : "Download failed");
 		}
@@ -449,7 +457,7 @@ export function PlantApp() {
 									"aria-autocomplete": "list"
 								}),
 								query && results.length > 0 ? /* @__PURE__ */ jsx("ul", {
-									className: "absolute top-full z-50 mt-1 w-full overflow-hidden rounded-[var(--radius-md)] border border-border bg-elevated py-1 shadow-lg",
+									className: "absolute top-full z-[70] mt-1 w-full overflow-hidden rounded-[var(--radius-md)] border border-border bg-elevated py-1 shadow-lg",
 									children: results.map((r) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsx("button", {
 										type: "button",
 										className: "flex w-full px-3 py-2 text-left text-sm hover:bg-surface-2",
@@ -469,7 +477,7 @@ export function PlantApp() {
 									}) }, `${r.lat},${r.lng},${r.label}`))
 								}) : null,
 								query && searchSettled && !searching && results.length === 0 ? /* @__PURE__ */ jsx("p", {
-									className: "absolute top-full z-50 mt-1 w-full rounded-[var(--radius-md)] border border-border bg-elevated px-3 py-2 text-sm text-muted-foreground shadow-lg",
+									className: "absolute top-full z-[70] mt-1 w-full rounded-[var(--radius-md)] border border-border bg-elevated px-3 py-2 text-sm text-muted-foreground shadow-lg",
 									children: "No places found"
 								}) : null,
 								searching ? /* @__PURE__ */ jsx("p", {
@@ -631,7 +639,10 @@ export function PlantApp() {
 				}),
 				/* @__PURE__ */ jsx(ToolDock, {
 					tool,
+					eggTool,
+					eggPlacing,
 					onTool: (t) => usePlantStore.getState().setTool(t),
+					onEgg: () => usePlantStore.getState().setEggPlacing(!usePlantStore.getState().eggPlacing),
 					onOverlay: () => overlayRef.current?.click()
 				}),
 				tool === "pedestal" || tool === "vault" || tool === "mdu" || tool === "pole" ? /* @__PURE__ */ jsxs("div", {
@@ -988,12 +999,20 @@ export function PlantApp() {
 				/* @__PURE__ */ jsx(Toaster, {
 					theme: "dark",
 					position: "bottom-left"
-				})
+				}),
+				eggOpen ? /* @__PURE__ */ jsx(BucketRun, { onClose: () => usePlantStore.getState().closeEgg() }) : null
 			]
 		})
 	});
 }
-function ToolDock({ tool, onTool, onOverlay }) {
+function ToolDock({ tool, onTool, onOverlay, eggTool, eggPlacing, onEgg }) {
+	const eggButton = (compact) => eggTool ? /* @__PURE__ */ jsx(DockButton, {
+		compact,
+		active: eggPlacing,
+		onClick: onEgg,
+		label: "Egg",
+		icon: /* @__PURE__ */ jsx("span", { className: "egg-body egg-tool" })
+	}) : null;
 	return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsxs("nav", {
 		className: "absolute top-1/2 left-2 z-20 hidden max-h-[calc(100dvh-2rem)] w-28 -translate-y-1/2 flex-col gap-0.5 overflow-y-auto rounded-[var(--radius-md)] border border-border bg-elevated/95 p-1 md:flex",
 		children: [
@@ -1026,6 +1045,7 @@ function ToolDock({ tool, onTool, onOverlay }) {
 					icon: /* @__PURE__ */ jsx(Glyph, {})
 				}, p.id);
 			}),
+			eggButton(false),
 			/* @__PURE__ */ jsx(Separator, { className: "my-1" }),
 			/* @__PURE__ */ jsx(AdvancedMenu, {
 				tool,
@@ -1061,7 +1081,7 @@ function ToolDock({ tool, onTool, onOverlay }) {
 					label: p.label,
 					icon: /* @__PURE__ */ jsx(Glyph, {})
 				}, p.id);
-			}), /* @__PURE__ */ jsx(AdvancedMenu, {
+			}), eggButton(true), /* @__PURE__ */ jsx(AdvancedMenu, {
 				tool,
 				onTool,
 				onOverlay,
