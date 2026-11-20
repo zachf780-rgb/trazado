@@ -8,19 +8,24 @@ export type MapShot = {
   zoom: number;
   width: number;
   height: number;
+  south?: number;
+  north?: number;
+  west?: number;
+  east?: number;
 };
 
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error("Could not read the map picture"));
     img.src = url;
   });
 }
 
-function stamp(pdf: jsPDF, page: number, lat: number, lng: number) {
-  const label = `${lat.toFixed(6)}, ${lng.toFixed(6)}   p.${page}`;
+function stamp(pdf: jsPDF, page: number, lat: number, lng: number, title = "") {
+  const label = title ? `${title}   ${lat.toFixed(6)}, ${lng.toFixed(6)}` : `${lat.toFixed(6)}, ${lng.toFixed(6)}   p.${page}`;
   pdf.setFillColor(17, 17, 19);
   pdf.rect(10, 10, Math.max(210, label.length * 7.2), 26, "F");
   pdf.setTextColor(248, 250, 252);
@@ -29,66 +34,105 @@ function stamp(pdf: jsPDF, page: number, lat: number, lng: number) {
   pdf.text(label, 18, 28);
 }
 
-function pointToward(from: MapShot, to: MapShot): "left" | "right" | "up" | "down" {
-  const dx = to.lng - from.lng;
-  const dy = to.lat - from.lat;
-  if (Math.abs(dx) >= Math.abs(dy)) return dx < 0 ? "left" : "right";
-  return dy > 0 ? "up" : "down";
+function worldAt(lat: number, lng: number, zoom: number) {
+  const scale = 256 * 2 ** zoom;
+  const x = ((lng + 180) / 360) * scale;
+  const sine = Math.sin((lat * Math.PI) / 180);
+  const y = (0.5 - Math.log((1 + sine) / (1 - sine)) / (4 * Math.PI)) * scale;
+  return { x, y, scale };
 }
 
-function nextArrow(pdf: jsPDF, edge: "left" | "right" | "up" | "down", page: number, w: number, h: number, slot = 0) {
-  const label = `p.${page}`;
-  pdf.setFont("courier", "bold");
-  pdf.setFontSize(12);
-  const boxW = 54;
-  const boxH = 22;
-  const gap = slot * (boxH + 8);
-  let x = w / 2 - boxW / 2;
-  let y = h / 2 - boxH / 2;
-  if (edge === "left") {
-    x = 12;
-    y += gap;
+function shotRect(shot: MapShot) {
+  if ([shot.south, shot.north, shot.west, shot.east].every((n) => typeof n === "number" && Number.isFinite(n))) {
+    return { south: shot.south as number, north: shot.north as number, west: shot.west as number, east: shot.east as number };
   }
-  if (edge === "right") {
-    x = w - boxW - 12;
-    y += gap;
-  }
-  if (edge === "up") {
-    y = 44;
-    x += gap;
-  }
-  if (edge === "down") {
-    y = h - boxH - 12;
-    x += gap;
-  }
-  pdf.setFillColor(17, 17, 19);
-  pdf.rect(x, y, boxW, boxH, "F");
-  const cx = x + 14;
-  const cy = y + boxH / 2;
-  pdf.setDrawColor(245, 217, 10);
-  pdf.setLineWidth(1.5);
-  if (edge === "left") pdf.triangle(cx - 8, cy, cx + 4, cy - 6, cx + 4, cy + 6, "S");
-  if (edge === "right") pdf.triangle(cx + 8, cy, cx - 4, cy - 6, cx - 4, cy + 6, "S");
-  if (edge === "up") pdf.triangle(cx, cy - 8, cx - 6, cy + 4, cx + 6, cy + 4, "S");
-  if (edge === "down") pdf.triangle(cx, cy + 8, cx - 6, cy - 4, cx + 6, cy - 4, "S");
-  pdf.setTextColor(245, 217, 10);
-  pdf.text(label, x + 24, y + 15);
+  const { x, y, scale } = worldAt(shot.lat, shot.lng, shot.zoom);
+  const lngOf = (px: number) => (px / scale) * 360 - 180;
+  const latOf = (py: number) => {
+    const n = Math.PI - (2 * Math.PI * py) / scale;
+    return (180 / Math.PI) * Math.atan(Math.sinh(n));
+  };
+  return {
+    west: lngOf(x - shot.width / 2),
+    east: lngOf(x + shot.width / 2),
+    north: latOf(y - shot.height / 2),
+    south: latOf(y + shot.height / 2),
+  };
 }
 
-function drawPage(pdf: jsPDF, image: HTMLImageElement, shot: MapShot, page: number, prev: MapShot | null, next: MapShot | null) {
+async function keyImage(pages: MapShot[]) {
+  const rects = pages.map(shotRect);
+  let south = Math.min(...rects.map((rect) => rect.south));
+  let north = Math.max(...rects.map((rect) => rect.north));
+  let west = Math.min(...rects.map((rect) => rect.west));
+  let east = Math.max(...rects.map((rect) => rect.east));
+  const padLat = Math.max((north - south) * 0.4, 0.0005);
+  const padLng = Math.max((east - west) * 0.4, 0.0005);
+  south -= padLat;
+  north += padLat;
+  west -= padLng;
+  east += padLng;
+  let zoom = 3;
+  for (let z = 18; z >= 3; z -= 1) {
+    const nw = worldAt(north, west, z);
+    const se = worldAt(south, east, z);
+    if (se.x - nw.x <= 1400 && se.y - nw.y <= 1000) {
+      zoom = z;
+      break;
+    }
+  }
+  const nw = worldAt(north, west, zoom);
+  const se = worldAt(south, east, zoom);
+  const width = Math.max(2, Math.ceil(se.x - nw.x));
+  const height = Math.max(2, Math.ceil(se.y - nw.y));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+  ctx.fillStyle = "#1c1c1c";
+  ctx.fillRect(0, 0, width, height);
+  const x0 = Math.floor(nw.x / 256);
+  const x1 = Math.floor(se.x / 256);
+  const y0 = Math.floor(nw.y / 256);
+  const y1 = Math.floor(se.y / 256);
+  await Promise.all(
+    Array.from({ length: (x1 - x0 + 1) * (y1 - y0 + 1) }, (_, index) => {
+      const span = x1 - x0 + 1;
+      const tx = x0 + (index % span);
+      const ty = y0 + Math.floor(index / span);
+      return loadImage(`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${zoom}/${ty}/${tx}`)
+        .then((img) => ctx.drawImage(img, tx * 256 - nw.x, ty * 256 - nw.y, 256, 256))
+        .catch(() => undefined);
+    }),
+  );
+  rects.forEach((rect, index) => {
+    const a = worldAt(rect.north, rect.west, zoom);
+    const b = worldAt(rect.south, rect.east, zoom);
+    const x = a.x - nw.x;
+    const y = a.y - nw.y;
+    const rw = b.x - a.x;
+    const rh = b.y - a.y;
+    ctx.strokeStyle = "#f5d90a";
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 7]);
+    ctx.strokeRect(x, y, rw, rh);
+    ctx.setLineDash([]);
+    const label = `p.${index + 2}`;
+    ctx.font = "700 22px sans-serif";
+    const tw = ctx.measureText(label).width + 16;
+    const labelY = y + 8 + index * 30;
+    ctx.fillStyle = "#111113";
+    ctx.fillRect(x + 8, labelY, tw, 28);
+    ctx.fillStyle = "#f5d90a";
+    ctx.fillText(label, x + 16, labelY + 20);
+  });
+  return canvas.toDataURL("image/png");
+}
+
+function drawPage(pdf: jsPDF, image: HTMLImageElement, shot: MapShot, page: number) {
   pdf.addImage(shot.image, "PNG", 0, 0, image.width, image.height);
   stamp(pdf, page, shot.lat, shot.lng);
-  const marks = [
-    prev ? { shot: prev, page: page - 1 } : null,
-    next ? { shot: next, page: page + 1 } : null,
-  ].filter((mark): mark is { shot: MapShot; page: number } => mark !== null);
-  const used = new Map<string, number>();
-  for (const mark of marks) {
-    const edge = pointToward(shot, mark.shot);
-    const slot = used.get(edge) ?? 0;
-    used.set(edge, slot + 1);
-    nextArrow(pdf, edge, mark.page, image.width, image.height, slot);
-  }
 }
 
 export async function exportMapPdf(host: HTMLElement, shot: Omit<MapShot, "image">, filename: string) {
@@ -101,24 +145,34 @@ export async function exportMapPdf(host: HTMLElement, shot: Omit<MapShot, "image
     format: [loaded.width, loaded.height],
     hotfixes: ["px_scaling"],
   });
-  drawPage(pdf, loaded, full, 1, null, null);
+  drawPage(pdf, loaded, full, 1);
   pdf.save(filename);
 }
 
 export async function exportPdfPages(pages: MapShot[], filename: string) {
   if (pages.length === 0) return;
   const images = await Promise.all(pages.map((page) => loadImage(page.image)));
-  const first = images[0]!;
+  const keyUrl = pages.length > 1 ? await keyImage(pages) : "";
+  const key = keyUrl ? await loadImage(keyUrl) : null;
+  const first = key ?? images[0]!;
   const pdf = new jsPDF({
     orientation: first.width >= first.height ? "landscape" : "portrait",
     unit: "px",
     format: [first.width, first.height],
     hotfixes: ["px_scaling"],
   });
+  if (key) {
+    const rects = pages.map(shotRect);
+    const lat = rects.reduce((sum, rect) => sum + (rect.north + rect.south) / 2, 0) / rects.length;
+    const lng = rects.reduce((sum, rect) => sum + (rect.east + rect.west) / 2, 0) / rects.length;
+    pdf.addImage(keyUrl, "PNG", 0, 0, key.width, key.height);
+    stamp(pdf, 1, lat, lng, "Key");
+  }
   pages.forEach((page, index) => {
     const img = images[index]!;
-    if (index > 0) pdf.addPage([img.width, img.height], img.width >= img.height ? "landscape" : "portrait");
-    drawPage(pdf, img, page, index + 1, pages[index - 1] ?? null, pages[index + 1] ?? null);
+    const number = key ? index + 2 : index + 1;
+    if (key || index > 0) pdf.addPage([img.width, img.height], img.width >= img.height ? "landscape" : "portrait");
+    drawPage(pdf, img, page, number);
   });
   pdf.save(filename);
 }

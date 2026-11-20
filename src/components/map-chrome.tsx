@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, type MutableRefObject, type PointerEvent a
 import L from "leaflet";
 import { usePlantStore } from "@/lib/store";
 import type { FrameFeature, LatLng, NoteBoard } from "@/lib/types";
-import { calloutAt, calloutFeet, footageSpans, haversineFeet, objectSpans, offsetBeside, parallelPath, pathFootage, pathFrame, pathMidpoint, readableRotation, reportedFeet, slotCableTag, spanCalloutDir, spanCalloutStep, spanParts, spanShownFeet } from "@/lib/geo";
-import { isSnapTarget, linePaint, lineWeightOf, pointLabelColor, tintHex } from "@/lib/presets";
+import { calloutAt, calloutFeet, footageSpans, haversineFeet, joinMask, objectSpans, offsetBeside, parallelOffsetFt, parallelPath, pathFootage, pathFrame, pathMidpoint, readableRotation, reportedFeet, slotCableTag, spanCalloutDir, spanCalloutStep, spanParts, spanShownFeet, squareLine2 } from "@/lib/geo";
+import { isSnapTarget, joinsAtEnds, linePaint, linePreset, lineWeightOf, lineWidth, pointLabelColor, tintHex } from "@/lib/presets";
 import { pedestalIconDataUrl, pointIconDataUrl } from "@/lib/icons";
 import { escapeHtml } from "@/lib/utils";
 
@@ -51,6 +51,7 @@ export function MapChrome({
   const board = usePlantStore((s) => s.board);
   const frames = usePlantStore((s) => s.frames);
   const selection = usePlantStore((s) => s.selection);
+  const tool = usePlantStore((s) => s.tool);
   const [, setTick] = useState(0);
   const inners = useRef(new Map<string, L.Map>());
 
@@ -103,54 +104,75 @@ export function MapChrome({
       {board && notes.length > 0 && board.opened ? (
         <Board map={map} board={board} notes={notes.map((note) => ({ n: note.n, text: note.text }))} selected={selection?.type === "board"} onGesture={onGesture} />
       ) : null}
-      {frames.map((frame) =>
-        selection?.type === "frame" && selection.id === frame.id ? (
-          <div
-            key={`${frame.id}-move`}
-            className="pointer-events-auto absolute"
-            style={{ ...(() => {
-              const box = projectBox(map, frame);
-              return { left: box.left, top: box.top, width: box.width, height: box.height };
-            })(), cursor: "grab" }}
-            onPointerDown={(ev) => {
-              ev.stopPropagation();
-              ev.preventDefault();
-              onGesture(true);
-              map.dragging.disable();
-              usePlantStore.getState().checkpoint();
-              const start = map.mouseEventToLatLng(ev.nativeEvent);
-              const origin = { ...frame };
-              const place = (e: PointerEvent) => {
-                const ll = map.mouseEventToLatLng(e);
-                const dLat = ll.lat - start.lat;
-                const dLng = ll.lng - start.lng;
-                usePlantStore.getState().updateFrame(frame.id, {
-                  south: origin.south + dLat,
-                  north: origin.north + dLat,
-                  west: origin.west + dLng,
-                  east: origin.east + dLng,
-                });
-              };
-              const onUp = (e: PointerEvent) => {
-                window.removeEventListener("pointermove", place);
-                window.removeEventListener("pointerup", onUp);
-                if (usePlantStore.getState().tool !== "frame") map.dragging.enable();
-                onGesture(false);
-                place(e);
-              };
-              window.addEventListener("pointermove", place);
-              window.addEventListener("pointerup", onUp);
-            }}
-          >
-            <span className="export-hide pointer-events-none absolute top-1 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-[#f5d90a]">Drag frame</span>
-          </div>
-        ) : null,
-      )}
+      {tool === "select"
+        ? frames.map((frame) => {
+            const box = projectBox(map, frame);
+            const edges = [
+              { left: box.left - 8, top: box.top - 8, width: box.width + 16, height: 16 },
+              { left: box.left - 8, top: box.top + box.height - 8, width: box.width + 16, height: 16 },
+              { left: box.left - 8, top: box.top, width: 16, height: box.height },
+              { left: box.left + box.width - 8, top: box.top, width: 16, height: box.height },
+            ];
+            return edges.map((edge, index) => (
+              <div
+                key={`${frame.id}-edge-${index}`}
+                className="pointer-events-auto absolute"
+                style={{ ...edge, cursor: "pointer" }}
+                onPointerDown={(ev) =>
+                  beginAdjust(ev, map, onGesture, () => usePlantStore.getState().select({ type: "frame", id: frame.id }), (dLat, dLng) => {
+                    usePlantStore.getState().updateFrame(frame.id, {
+                      south: frame.south + dLat,
+                      north: frame.north + dLat,
+                      west: frame.west + dLng,
+                      east: frame.east + dLng,
+                    });
+                  })
+                }
+              />
+            ));
+          })
+        : null}
       {frames.map((frame) => (
         <FrameInset key={frame.id} map={map} frame={frame} inners={inners} selected={selection?.type === "frame" && selection.id === frame.id} onGesture={onGesture} />
       ))}
     </div>
   );
+}
+
+function beginAdjust(
+  ev: ReactPointerEvent,
+  map: L.Map,
+  onGesture: (active: boolean) => void,
+  select: () => void,
+  moveBy: (dLat: number, dLng: number) => void,
+) {
+  if (usePlantStore.getState().tool !== "select") return;
+  ev.stopPropagation();
+  ev.preventDefault();
+  select();
+  const start = map.mouseEventToLatLng(ev.nativeEvent);
+  const origin = { x: ev.clientX, y: ev.clientY };
+  let dragging = false;
+  const place = (e: PointerEvent) => {
+    if (!dragging) {
+      if (Math.hypot(e.clientX - origin.x, e.clientY - origin.y) < 5) return;
+      dragging = true;
+      onGesture(true);
+      map.dragging.disable();
+      usePlantStore.getState().checkpoint();
+    }
+    const ll = map.mouseEventToLatLng(e);
+    moveBy(ll.lat - start.lat, ll.lng - start.lng);
+  };
+  const onUp = () => {
+    window.removeEventListener("pointermove", place);
+    window.removeEventListener("pointerup", onUp);
+    if (!dragging) return;
+    if (usePlantStore.getState().tool !== "frame") map.dragging.enable();
+    onGesture(false);
+  };
+  window.addEventListener("pointermove", place);
+  window.addEventListener("pointerup", onUp);
 }
 
 function inFrame(frame: FrameFeature, at: LatLng | null | undefined) {
@@ -268,29 +290,37 @@ function Board({
         cursor: selected ? "grab" : "pointer",
       }}
       onPointerDown={(ev) => {
-        if ((ev.target as HTMLElement).dataset.handle) return;
-        ev.stopPropagation();
-        if (!board.opened) {
-          const view = usePlantStore.getState().view;
-          const world = 256 * 2 ** (Number.isFinite(view.zoom) ? view.zoom : 18);
-          const cos = Math.max(0.2, Math.abs(Math.cos((view.lat * Math.PI) / 180)));
-          const west = Math.min(board.west, board.east);
-          const south = Math.min(board.south, board.north);
-          usePlantStore.getState().updateBoard({
-            opened: true,
-            west,
-            south,
-            east: west + (210 / world) * 360,
-            north: south + (Math.max(56, notes.length * 22 + 12) / world) * 360 * cos,
-          });
-          usePlantStore.getState().select({ type: "board" });
-          return;
-        }
-        if (!selected) {
-          usePlantStore.getState().select({ type: "board" });
-          return;
-        }
-        drag(ev, "move");
+        const origin = { ...board };
+        beginAdjust(
+          ev,
+          map,
+          onGesture,
+          () => {
+            if (!board.opened) {
+              const view = usePlantStore.getState().view;
+              const world = 256 * 2 ** (Number.isFinite(view.zoom) ? view.zoom : 18);
+              const cos = Math.max(0.2, Math.abs(Math.cos((view.lat * Math.PI) / 180)));
+              const west = Math.min(board.west, board.east);
+              const south = Math.min(board.south, board.north);
+              usePlantStore.getState().updateBoard({
+                opened: true,
+                west,
+                south,
+                east: west + (210 / world) * 360,
+                north: south + (Math.max(56, notes.length * 22 + 12) / world) * 360 * cos,
+              });
+            }
+            usePlantStore.getState().select({ type: "board" });
+          },
+          (dLat, dLng) => {
+            usePlantStore.getState().updateBoard({
+              south: origin.south + dLat,
+              north: origin.north + dLat,
+              west: origin.west + dLng,
+              east: origin.east + dLng,
+            });
+          },
+        );
       }}
     >
       <div ref={body} className="pointer-events-none h-full overflow-hidden px-2 py-1" style={{ textShadow: "0 1px 2px #000" }}>
@@ -390,12 +420,6 @@ function FrameInset({
       const color = linePaint(line);
       const weight = lineWeightOf(line);
       L.polyline(line.path.map((p) => [p.lat, p.lng] as [number, number]), { color, weight, interactive: false }).addTo(group);
-      if (line.parallel) {
-        const twin = parallelPath(line.path, 12, line.path.map(() => false));
-        if (twin.length >= 2) {
-          L.polyline(twin.map((p) => [p.lat, p.lng] as [number, number]), { color: tintHex(color, 0.45), weight, interactive: false }).addTo(group);
-        }
-      }
     }
     for (const point of points) {
       const iconUrl = point.kind === "pedestal" && point.pedType ? pedestalIconDataUrl(point.pedType, point.pedRotate) : pointIconDataUrl(point.kind);
@@ -417,6 +441,54 @@ function FrameInset({
       }
     }
     const gear = points.filter((point) => isSnapTarget(point.kind)).map((point) => point.position);
+    const project = (ll: LatLng) => {
+      const px = inner.latLngToContainerPoint([ll.lat, ll.lng]);
+      return { x: px.x, y: px.y };
+    };
+    const open: { id: string; kind: (typeof lines)[number]["kind"]; path: LatLng[]; offsetFt: number; drawn: LatLng[] }[] = [];
+    for (const line of lines) {
+      if (!line.parallel || line.path.length < 2) continue;
+      const offsetFt = parallelOffsetFt(line.path, project);
+      const canJoin = Boolean(line.joinEnds) && joinsAtEnds(line.kind);
+      const snapped = (line.snaps ?? []).filter((snap) => gear.some((at) => haversineFeet(snap, at) <= 0.5));
+      const drawn = parallelPath(line.path, offsetFt, joinMask(line.path, snapped, canJoin, [], 0.5));
+      if (drawn.length < 2) continue;
+      if (!canJoin) {
+        open.push({ id: line.id, kind: line.kind, path: line.path, offsetFt, drawn });
+        continue;
+      }
+      L.polyline(drawn.map((p) => [p.lat, p.lng] as [number, number]), {
+        color: tintHex(linePaint(line), 0.42),
+        weight: lineWeightOf(line),
+        interactive: false,
+      }).addTo(group);
+    }
+    for (const figure of squareLine2(open, gear)) {
+      if (figure.path.length < 2) continue;
+      L.polyline(figure.path.map((p) => [p.lat, p.lng] as [number, number]), {
+        color: tintHex(linePreset(figure.kind).color, 0.42),
+        weight: lineWidth(figure.kind),
+        interactive: false,
+      }).addTo(group);
+    }
+    const seenDots = new Set<string>();
+    for (const line of lines) {
+      for (const dot of line.dots ?? []) {
+        if (!dot.show || !inFrame(frame, dot.at)) continue;
+        const key = `${dot.at.lat.toFixed(5)},${dot.at.lng.toFixed(5)}`;
+        if (seenDots.has(key)) continue;
+        seenDots.add(key);
+        const color = linePreset(line.kind).color;
+        L.circleMarker([dot.at.lat, dot.at.lng], {
+          radius: Math.max(5, lineWidth(line.kind) * 0.8),
+          color: "#ffffff",
+          weight: 2,
+          fillColor: color,
+          fillOpacity: 1,
+          interactive: false,
+        }).addTo(group);
+      }
+    }
     for (const line of lines) {
       if (line.path.length < 2 || line.kind === "road") continue;
       const paint = linePaint(line);
@@ -536,12 +608,21 @@ function FrameInset({
       style={{ left: box.left, top: box.top, width: box.width, height: box.height, cursor: selected ? "grab" : "pointer", borderColor: frame.linkColor || "#f5d90a", borderStyle: "dashed" }}
       onPointerDown={(ev) => {
         if ((ev.target as HTMLElement).dataset.handle) return;
-        ev.stopPropagation();
-        if (!selected) {
-          usePlantStore.getState().select({ type: "frame", id: frame.id });
-          return;
-        }
-        drag(ev, "move");
+        const origin = { ...frame };
+        beginAdjust(
+          ev,
+          map,
+          onGesture,
+          () => usePlantStore.getState().select({ type: "frame", id: frame.id }),
+          (dLat, dLng) => {
+            usePlantStore.getState().updateFrame(frame.id, {
+              viewSouth: origin.viewSouth + dLat,
+              viewNorth: origin.viewNorth + dLat,
+              viewWest: origin.viewWest + dLng,
+              viewEast: origin.viewEast + dLng,
+            });
+          },
+        );
       }}
       onWheel={(ev) => {
         ev.preventDefault();

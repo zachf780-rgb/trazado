@@ -647,8 +647,11 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
     ctx.clearRect(0, 0, 64, 64);
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(32, 32, 26, 0, Math.PI * 2);
+    ctx.arc(32, 32, 18, 0, Math.PI * 2);
     ctx.fill();
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = "#ffffff";
+    ctx.stroke();
     const name = `dot-${dotFiles.size + 1}.png`;
     files!.file(name, dataUrlToBytes(canvas.toDataURL("image/png")).bytes);
     const href = `files/${name}`;
@@ -991,7 +994,7 @@ ${slashXml(slashMarks(path))}`;
         <ExtendedData><Data name="joinDot"><value>1</value></Data></ExtendedData>
         <Style>
           <IconStyle>
-            <scale>0.34</scale>
+            <scale>0.72</scale>
             <hotSpot x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
             <Icon><href>${escapeXml(href)}</href></Icon>
           </IconStyle>

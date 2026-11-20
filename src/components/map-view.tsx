@@ -460,6 +460,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
       center: [view.lat, view.lng],
       zoom: view.zoom,
     });
+    (el as HTMLElement & { _trazadoMap?: L.Map })._trazadoMap = map;
 
     L.control.zoom({ position: "bottomleft" }).addTo(map);
     L.control.scale({ imperial: true, metric: false, position: "bottomleft" }).addTo(map);

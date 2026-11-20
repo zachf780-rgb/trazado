@@ -340,6 +340,23 @@ export function PlantApp() {
 		}
 	}
 	function mapShot(host) {
+		const map = host._trazadoMap;
+		if (map) {
+			const bounds = map.getBounds();
+			const center = map.getCenter();
+			const size = map.getSize();
+			return {
+				lat: center.lat,
+				lng: center.lng,
+				zoom: map.getZoom(),
+				width: size.x,
+				height: size.y,
+				south: bounds.getSouth(),
+				north: bounds.getNorth(),
+				west: bounds.getWest(),
+				east: bounds.getEast()
+			};
+		}
 		const view = usePlantStore.getState().view;
 		return { lat: view.lat, lng: view.lng, zoom: view.zoom, width: host.clientWidth, height: host.clientHeight };
 	}
