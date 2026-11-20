@@ -15,16 +15,20 @@ import type {
   Tool,
   CableType,
   SlotChoice,
+  NoteRef,
+  NoteBoard,
+  FrameFeature,
+  LabelSide,
 } from "./types";
 import { EMPTY_PROJECT, LINE_KINDS, CABLE_IDS, isAerialOp, isCableType, type CableWork, type LineKind } from "./types";
 import { uid } from "./utils";
-import { constrainCardinal, haversineFeet, lineLossNote, normalizeBox, notesWithLoss, pathFootage, roundFeet } from "./geo";
-import { optimizeLayout } from "./optimize";
+import { constrainCardinal, footageSpans, haversineFeet, lineLossNote, normalizeBox, notesWithLoss, pathFootage, pathMidpoint, roundFeet } from "./geo";
+import { optimizeLayout, layoutNotes } from "./optimize";
 import { defaultPointName, allowedCables, allowsEmpty, canResize, isLineKind, isPedType, isPipeRole, isPointKind, isSnapTarget, isVaultType, pedestalDir } from "./presets";
 
 const HISTORY_LIMIT = 60;
 
-type Snapshot = Pick<PlantProject, "lines" | "points" | "polygons" | "overlays">;
+type Snapshot = Pick<PlantProject, "lines" | "points" | "polygons" | "overlays" | "notes" | "board" | "frames">;
 
 export interface GpsFix {
   lat: number;
@@ -54,6 +58,12 @@ interface PlantState extends PlantProject {
   placeEgg: (at: LatLng) => void;
   openEgg: () => void;
   closeEgg: () => void;
+  addNote: (at: LatLng, anchor: LatLng | null) => void;
+  addRef: (target: { type: "line" | "point"; id: string }) => void;
+  updateNote: (id: string, patch: Partial<Pick<NoteRef, "at" | "anchor" | "callout" | "text" | "side" | "span">>) => void;
+  updateBoard: (patch: Partial<NoteBoard>) => void;
+  addFrame: (frame: FrameFeature) => void;
+  updateFrame: (id: string, patch: Partial<Omit<FrameFeature, "id">>) => void;
   placeSize: ObjectSize;
   setPlaceSize: (placeSize: ObjectSize) => void;
   labelPlate: boolean;
@@ -124,6 +134,9 @@ function cloneSnap(s: Snapshot): Snapshot {
     points: s.points,
     polygons: s.polygons,
     overlays: s.overlays,
+    notes: s.notes ?? [],
+    board: s.board ?? null,
+    frames: s.frames ?? [],
   });
 }
 
@@ -308,6 +321,7 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
             .filter((dot) => dot && isLatLng(dot.at) && typeof dot.peer === "string")
             .map((dot) => ({ at: dot.at, peer: dot.peer, show: dot.show !== false }))
         : [],
+      snaps: Array.isArray(line.snaps) ? line.snaps.filter(isLatLng) : [],
       pipeRoles: Array.isArray(line.pipeRoles) ? line.pipeRoles.filter(isPipeRole) : [],
       occupied: line.occupied === true,
       hideSpan: line.hideSpan === true,
@@ -389,6 +403,61 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
       rotation: Number.isFinite(ov.rotation) ? ((Math.round(ov.rotation) % 360) + 360) % 360 : 0,
     });
   }
+  const notes: NoteRef[] = [];
+  const used = new Set<number>();
+  for (const note of raw.notes ?? []) {
+    if (!note || !isLatLng(note.at)) continue;
+    const n = Math.round(Number(note.n));
+    if (!Number.isFinite(n) || n < 1 || used.has(n)) continue;
+    used.add(n);
+    notes.push({
+      id: typeof note.id === "string" ? note.id : uid(),
+      n,
+      at: note.at,
+      anchor: isLatLng(note.anchor) ? note.anchor : null,
+      callout: note.callout === true,
+      text: typeof note.text === "string" ? note.text : "",
+      side: note.side === "bottom" || note.side === "left" || note.side === "right" ? note.side : "top",
+      span: Number.isFinite(note.span) ? Math.max(0, Math.round(note.span)) : 0,
+      target: note.target && (note.target.type === "line" || note.target.type === "point") && typeof note.target.id === "string" ? { type: note.target.type, id: note.target.id } : null,
+    });
+  }
+  const boardRaw = raw.board as (Partial<NoteBoard> & { lat?: number; lng?: number; w?: number; h?: number; x?: number; y?: number }) | null | undefined;
+  const opacity = boardRaw && [0, 0.25, 0.5, 0.75, 1].includes(Number(boardRaw.opacity)) ? Number(boardRaw.opacity) : 1;
+  const opened = boardRaw?.opened === true || notes.some((note) => note.text.trim().length > 0);
+  const board: NoteBoard | null = !boardRaw
+    ? null
+    : [boardRaw.south, boardRaw.west, boardRaw.north, boardRaw.east].every((n) => Number.isFinite(n))
+      ? { south: boardRaw.south as number, west: boardRaw.west as number, north: boardRaw.north as number, east: boardRaw.east as number, opacity, opened }
+      : null;
+  const frames: FrameFeature[] = [];
+  for (const frame of raw.frames ?? []) {
+    if (!frame || ![frame.south, frame.west, frame.north, frame.east].every((n) => Number.isFinite(n))) continue;
+    const legacy = frame as FrameFeature & { lat?: number; lng?: number; zoom?: number };
+    const spanLat = Math.max(Math.abs(frame.north - frame.south), 0.00005);
+    const spanLng = Math.max(Math.abs(frame.east - frame.west), 0.00005);
+    frames.push({
+      id: typeof frame.id === "string" ? frame.id : uid(),
+      south: frame.south,
+      west: frame.west,
+      north: frame.north,
+      east: frame.east,
+      viewSouth: Number.isFinite(frame.viewSouth) ? frame.viewSouth : Math.min(frame.south, frame.north),
+      viewNorth: Number.isFinite(frame.viewNorth) ? frame.viewNorth : Math.max(frame.south, frame.north),
+      viewWest: Number.isFinite(frame.viewWest) ? frame.viewWest : Math.max(frame.west, frame.east) + spanLng * 0.15,
+      viewEast: Number.isFinite(frame.viewEast) ? frame.viewEast : Math.max(frame.west, frame.east) + spanLng * 0.15 + spanLng,
+      closer: Number.isFinite(frame.closer) ? Math.min(3, Math.max(0, frame.closer)) : Number.isFinite(legacy.zoom) ? 0.3 : 0.3,
+      liftLabels: frame.liftLabels === true,
+      linkColor: /^#[0-9a-f]{6}$/i.test(frame.linkColor ?? "") ? frame.linkColor : "#f5d90a",
+    });
+  }
+  for (const line of lines) {
+    if (line.snaps.length > 0) continue;
+    line.snaps = points
+      .filter((point) => point.kind === "pedestal" || point.kind === "vault" || point.kind === "mdu" || point.kind === "pole")
+      .map((point) => point.position)
+      .filter((gear) => line.path.some((vertex) => haversineFeet(vertex, gear) <= 0.5));
+  }
   const view = raw.view;
   return {
     projectName:
@@ -399,11 +468,43 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
     points,
     polygons,
     overlays,
+    notes,
+    board,
+    frames,
     view:
       view && Number.isFinite(view.lat) && Number.isFinite(view.lng) && Number.isFinite(view.zoom)
         ? view
         : EMPTY_PROJECT.view,
   };
+}
+
+function lineSpanAt(line: LineFeature, points: PointFeature[], index: number): { at: LatLng; count: number; span: number } | null {
+  const gear = points.filter((point) => point.kind === "pedestal" || point.kind === "vault" || point.kind === "mdu" || point.kind === "pole").map((point) => point.position);
+  const spans = footageSpans(line.path, gear, line.splits ?? [], (line.dots ?? []).map((dot) => dot.at));
+  if (spans.length === 0) {
+    const mid = pathMidpoint(line.path);
+    return mid ? { at: mid, count: 1, span: 0 } : null;
+  }
+  const span = Math.max(0, Math.min(spans.length - 1, index));
+  return { at: spans[span]?.labelAt ?? spans[0]!.labelAt, count: spans.length, span };
+}
+
+function beside(anchor: LatLng, side: LabelSide, zoom: number): LatLng {
+  const step = (360 / 2 ** (Number.isFinite(zoom) ? zoom : 18)) * 0.05;
+  if (side === "bottom") return { lat: anchor.lat - step, lng: anchor.lng };
+  if (side === "left") return { lat: anchor.lat, lng: anchor.lng - step };
+  if (side === "right") return { lat: anchor.lat, lng: anchor.lng + step };
+  return { lat: anchor.lat + step, lng: anchor.lng };
+}
+
+function defaultBoard(view: { lat: number; lng: number; zoom: number }): NoteBoard {
+  const world = 256 * 2 ** (Number.isFinite(view.zoom) ? view.zoom : 18);
+  const cos = Math.max(0.2, Math.abs(Math.cos((view.lat * Math.PI) / 180)));
+  const dLng = (150 / world) * 360;
+  const dLat = (26 / world) * 360 * cos;
+  const north = view.lat + (90 / world) * 360 * cos;
+  const west = view.lng - (220 / world) * 360;
+  return { south: north - dLat, north, west, east: west + dLng, opacity: 1, opened: false };
 }
 
 export const usePlantStore = create<PlantState>()(
@@ -474,6 +575,91 @@ export const usePlantStore = create<PlantState>()(
       placeEgg: (at) => set({ eggs: [...get().eggs, { id: uid(), lat: at.lat, lng: at.lng }] }),
       openEgg: () => set({ eggOpen: true }),
       closeEgg: () => set({ eggOpen: false }),
+      addNote: (at, anchor) => {
+        if (!isLatLng(at)) return;
+        const s = get();
+        const n = s.notes.reduce((max, note) => Math.max(max, note.n), 0) + 1;
+        const note: NoteRef = { id: uid(), n, at, anchor: isLatLng(anchor) ? anchor : null, callout: false, text: "", side: "top", span: 0, target: null };
+        const board = s.board ?? defaultBoard(s.view);
+        set({
+          ...commit(s, { notes: [...s.notes, note], board }),
+          selection: { type: "note", id: note.id },
+        });
+      },
+      addRef: (target) => {
+        const s = get();
+        let anchor: LatLng | null = null;
+        let span = 0;
+        if (target.type === "point") anchor = s.points.find((point) => point.id === target.id)?.position ?? null;
+        else {
+          const line = s.lines.find((item) => item.id === target.id);
+          const placed = line ? lineSpanAt(line, s.points, 0) : null;
+          anchor = placed?.at ?? null;
+          span = placed?.span ?? 0;
+        }
+        if (!anchor) return;
+        const n = s.notes.reduce((max, note) => Math.max(max, note.n), 0) + 1;
+        const note: NoteRef = {
+          id: uid(),
+          n,
+          at: beside(anchor, "top", s.view.zoom),
+          anchor,
+          callout: false,
+          text: "",
+          side: "top",
+          span,
+          target,
+        };
+        set({
+          ...commit(s, { notes: [...s.notes, note], board: s.board ?? defaultBoard(s.view) }),
+          selection: { type: "note", id: note.id },
+        });
+      },
+      updateNote: (id, patch) =>
+        set({
+          notes: get().notes.map((note) => {
+            if (note.id !== id) return note;
+            const side = patch.side ?? note.side ?? "top";
+            let span = patch.span ?? note.span ?? 0;
+            let anchor = patch.anchor === null ? null : patch.anchor ?? note.anchor;
+            if (patch.span != null && note.target?.type === "line") {
+              const line = get().lines.find((item) => item.id === note.target?.id);
+              const placed = line ? lineSpanAt(line, get().points, patch.span) : null;
+              if (placed) {
+                span = placed.span;
+                anchor = placed.at;
+              }
+            }
+            const moved = patch.side != null || patch.span != null;
+            return {
+              ...note,
+              ...patch,
+              side,
+              span,
+              anchor,
+              at: patch.at ?? (moved && anchor ? beside(anchor, side, get().view.zoom) : note.at),
+            };
+          }),
+        }),
+      updateBoard: (patch) => {
+        const board = get().board;
+        if (!board) return;
+        set({ board: { ...board, ...patch } });
+      },
+      addFrame: (frame) => {
+        const s = get();
+        set({
+          ...commit(s, { frames: [...s.frames, frame] }),
+          draft: null,
+          pointer: null,
+          selection: { type: "frame", id: frame.id },
+          tool: "select",
+        });
+      },
+      updateFrame: (id, patch) =>
+        set({
+          frames: get().frames.map((frame) => (frame.id === id ? { ...frame, ...patch } : frame)),
+        }),
       setShift: (shift) => set({ shift }),
       setPointer: (pointer) => set({ pointer }),
       setView: (view) => set({ view }),
@@ -522,7 +708,7 @@ export const usePlantStore = create<PlantState>()(
           set({
             lineSnap: null,
             selection: null,
-            draft: { mode: "line", kind, path: [ask.at], declined: [], pending: [pending] },
+            draft: { mode: "line", kind, path: [ask.at], declined: [], pending: [pending], snaps: [] },
           });
           return;
         }
@@ -548,7 +734,7 @@ export const usePlantStore = create<PlantState>()(
           set({
             lineSnap: null,
             selection: null,
-            draft: { mode: "line", kind, path: [ask.click], declined: [declined], pending: [] },
+            draft: { mode: "line", kind, path: [ask.click], declined: [declined], pending: [], snaps: [] },
           });
           return;
         }
@@ -611,8 +797,9 @@ export const usePlantStore = create<PlantState>()(
       optimizeLabels: () => {
         const s = get();
         const next = optimizeLayout(s.lines, s.points, s.view);
-        if (!next) return false;
-        set(commit(s, next));
+        const refs = layoutNotes(s.notes, s.lines, s.points, s.view);
+        if (!next && !refs) return false;
+        set(commit(s, { lines: next?.lines ?? s.lines, points: next?.points ?? s.points, ...(refs ?? {}) }));
         return true;
       },
       select: (selection) => set({ selection, tool: "select", draft: null }),
@@ -666,6 +853,11 @@ export const usePlantStore = create<PlantState>()(
           return;
         }
 
+        if (tool === "frame") {
+          set({ draft: { mode: "frame", a: ll }, selection: null });
+          return;
+        }
+
         if (tool === "overlay") {
           if (!s.draft || s.draft.mode !== "overlay") return;
           if (!s.draft.a) {
@@ -696,13 +888,13 @@ export const usePlantStore = create<PlantState>()(
           const kind = tool as LineFeature["kind"];
           if (!s.draft || s.draft.mode !== "line") {
             set({
-              draft: { mode: "line", kind, path: [ll], declined: [], pending: [] },
+              draft: { mode: "line", kind, path: [ll], declined: [], pending: [], snaps: exact ? [ll] : [] },
               selection: null,
             });
             return;
           }
           set({
-            draft: { mode: "line", kind: s.draft.kind, path: [...s.draft.path, ll], declined: s.draft.declined, pending: s.draft.pending },
+            draft: { mode: "line", kind: s.draft.kind, path: [...s.draft.path, ll], declined: s.draft.declined, pending: s.draft.pending, snaps: exact ? [...s.draft.snaps, ll] : s.draft.snaps },
           });
         }
       },
@@ -770,6 +962,7 @@ export const usePlantStore = create<PlantState>()(
             name: "",
             splits: [],
             dots: d.pending.map((join) => ({ at: join.at, peer: join.targetId, show: join.showDot })),
+            snaps: d.snaps ?? [],
             pipeRoles: [],
             occupied: false,
             hideSpan: false,
@@ -925,7 +1118,27 @@ export const usePlantStore = create<PlantState>()(
             }),
             selection: null,
           });
-        } else {
+        } else if (sel.type === "note") {
+          set({
+            ...commit(s, { notes: s.notes.filter((note) => note.id !== sel.id) }),
+            selection: null,
+          });
+        } else if (sel.type === "frame") {
+          set({
+            ...commit(s, { frames: s.frames.filter((frame) => frame.id !== sel.id) }),
+            selection: null,
+          });
+        } else if (sel.type === "callout") {
+          set({
+            ...commit(s, { lines: s.lines.map((line) => (line.id === sel.id ? { ...line, callout: false } : line)) }),
+            selection: null,
+          });
+        } else if (sel.type === "board") {
+          set({
+            ...commit(s, { board: null }),
+            selection: null,
+          });
+        } else if (sel.type === "overlay") {
           set({
             ...commit(s, {
               overlays: s.overlays.filter((o) => o.id !== sel.id),
@@ -944,6 +1157,9 @@ export const usePlantStore = create<PlantState>()(
             points: clean.points,
             polygons: clean.polygons,
             overlays: clean.overlays,
+            notes: clean.notes,
+            board: clean.board,
+            frames: clean.frames,
           }),
           projectName: clean.projectName,
           view: project.view ?? s.view,
@@ -960,6 +1176,9 @@ export const usePlantStore = create<PlantState>()(
             points: [],
             polygons: [],
             overlays: [],
+            notes: [],
+            board: null,
+            frames: [],
           }),
           selection: null,
           draft: null,
@@ -1007,6 +1226,9 @@ export const usePlantStore = create<PlantState>()(
         points: s.points,
         polygons: s.polygons,
         overlays: s.overlays,
+        notes: s.notes,
+        board: s.board,
+        frames: s.frames,
         view: s.view,
         labelPlate: s.labelPlate,
         labelSize: s.labelSize,

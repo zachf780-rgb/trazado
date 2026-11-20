@@ -235,7 +235,7 @@ export function lineSnapTarget(
     }
     if (line.parallel) {
       const offsetFt = parallelOffsetFt(line.path, project);
-      const twin = parallelPath(line.path, offsetFt, joinMask(line.path, line.targets ?? [], line.joinEnds === true, []));
+      const twin = parallelPath(line.path, offsetFt, joinMask(line.path, snappedTargets(line.path, line.targets ?? []), line.joinEnds === true, []));
       if (twin.length < 2) {
         /* second line is not drawn */
       } else {
@@ -787,16 +787,21 @@ function pushDistinct(out: LatLng[], point: LatLng) {
 }
 
 /** Joined vertices taper onto the original line. Vertices in `holdOff` stay offset so a bypass can pass through. */
+export function snappedTargets(path: LatLng[], targets: LatLng[], feet = 0.5): LatLng[] {
+  return targets.filter((target) => path.some((vertex) => haversineFeet(vertex, target) <= feet));
+}
+
 export function joinMask(
   path: LatLng[],
   targets: LatLng[],
   enabled: boolean,
   holdOff: LatLng[] = [],
+  feet = 0.5,
 ): boolean[] {
   return path.map((vertex) => {
     if (!enabled) return false;
     if (holdOff.some((target) => haversineFeet(vertex, target) <= 15)) return false;
-    return targets.some((target) => haversineFeet(vertex, target) <= 15);
+    return targets.some((target) => haversineFeet(vertex, target) <= feet);
   });
 }
 function overpass(origin: LatLng, bearing: number, offsetFt: number, fromSign: number): LatLng[] {

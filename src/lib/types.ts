@@ -21,7 +21,9 @@ export type Tool =
   | LineKind
   | PointKind
   | "polygon"
-  | "overlay";
+  | "overlay"
+  | "note"
+  | "frame";
 
 export interface LatLng {
   lat: number;
@@ -85,6 +87,7 @@ export interface LineFeature {
   name: string;
   splits: LatLng[];
   dots: LineDot[];
+  snaps: LatLng[];
   pipeRoles: PipeRole[];
   occupied: boolean;
   hideSpan: boolean;
@@ -147,6 +150,42 @@ export interface OverlayFeature {
   rotation: number;
 }
 
+export interface NoteRef {
+  id: string;
+  n: number;
+  at: LatLng;
+  anchor: LatLng | null;
+  callout: boolean;
+  text: string;
+  side: LabelSide;
+  span: number;
+  target: { type: "line" | "point"; id: string } | null;
+}
+
+export interface NoteBoard {
+  south: number;
+  west: number;
+  north: number;
+  east: number;
+  opacity: number;
+  opened: boolean;
+}
+
+export interface FrameFeature {
+  id: string;
+  south: number;
+  west: number;
+  north: number;
+  east: number;
+  viewSouth: number;
+  viewWest: number;
+  viewNorth: number;
+  viewEast: number;
+  closer: number;
+  liftLabels: boolean;
+  linkColor: string;
+}
+
 export interface MapViewState {
   lat: number;
   lng: number;
@@ -157,12 +196,17 @@ export type Selection =
   | { type: "line"; id: string }
   | { type: "point"; id: string }
   | { type: "polygon"; id: string }
-  | { type: "overlay"; id: string };
+  | { type: "overlay"; id: string }
+  | { type: "note"; id: string }
+  | { type: "board" }
+  | { type: "frame"; id: string }
+  | { type: "callout"; id: string };
 
 export type Draft =
-  | { mode: "line"; kind: LineKind; path: LatLng[]; declined: { lineId: string; at: LatLng }[]; pending: { at: LatLng; targetId: string; kind: "end" | "cross"; showDot: boolean; measureAt?: LatLng }[] }
+  | { mode: "line"; kind: LineKind; path: LatLng[]; declined: { lineId: string; at: LatLng }[]; pending: { at: LatLng; targetId: string; kind: "end" | "cross"; showDot: boolean; measureAt?: LatLng }[]; snaps: LatLng[] }
   | { mode: "polygon"; path: LatLng[] }
-  | { mode: "overlay"; name: string; dataUrl: string; a: LatLng | null };
+  | { mode: "overlay"; name: string; dataUrl: string; a: LatLng | null }
+  | { mode: "frame"; a: LatLng | null };
 
 export interface PlantProject {
   projectName: string;
@@ -170,6 +214,9 @@ export interface PlantProject {
   points: PointFeature[];
   polygons: PolygonFeature[];
   overlays: OverlayFeature[];
+  notes: NoteRef[];
+  board: NoteBoard | null;
+  frames: FrameFeature[];
   view: MapViewState;
 }
 
@@ -179,6 +226,9 @@ export const EMPTY_PROJECT: PlantProject = {
   points: [],
   polygons: [],
   overlays: [],
+  notes: [],
+  board: null,
+  frames: [],
   view: { lat: 39.8283, lng: -98.5795, zoom: 5 },
 };
 

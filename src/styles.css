@@ -182,6 +182,46 @@
   -webkit-text-stroke: 7px #111113;
 }
 
+.ref-prompt {
+  animation: ref-strobe 0.85s ease-in-out infinite;
+}
+
+@keyframes ref-strobe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px #111113, 0 0 14px 3px #f5d90a;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    box-shadow: 0 0 0 3px #fff, 0 0 32px 12px #f5d90a;
+    transform: translate(-50%, -50%) scale(1.04);
+  }
+}
+
+.leaflet-div-icon.ref-badge-wrap {
+  background: none;
+  border: none;
+}
+
+.ref-badge {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 999px;
+  background: #f5d90a;
+  color: #111113;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 0 0 2px #111113, 0 0 0 3px #f5d90a;
+}
+
+.ref-badge.is-selected {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #f5d90a;
+}
+
 .leaflet-tooltip.object-label.size-lg {
   font-size: 16px;
   -webkit-text-stroke: 4px #fff;

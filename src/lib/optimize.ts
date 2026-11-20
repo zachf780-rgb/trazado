@@ -10,7 +10,7 @@ import {
   spanShownFeet,
   slotCableTag,
 } from "./geo";
-import type { LabelSide, LatLng, LineFeature, MapViewState, PointFeature } from "./types";
+import type { LabelSide, LatLng, LineFeature, MapViewState, NoteRef, PointFeature } from "./types";
 
 type Rect = { x: number; y: number; w: number; h: number };
 
@@ -246,6 +246,60 @@ function fitsInline(job: SpanJob, zoom: number): boolean {
   const len = Math.hypot(b.x - a.x, b.y - a.y);
   const text = job.detail ? `${job.footage} ${job.detail}` : job.footage;
   return len >= Math.max(text.length, 1) * charW(job.size) + 18;
+}
+
+function unworld(x: number, y: number, zoom: number): LatLng {
+  const scale = 256 * 2 ** zoom;
+  const lng = (x / scale) * 360 - 180;
+  const n = Math.PI - (2 * Math.PI * y) / scale;
+  const lat = (180 / Math.PI) * Math.atan(Math.sinh(n));
+  return { lat, lng };
+}
+
+export function layoutNotes(
+  notes: NoteRef[],
+  lines: LineFeature[],
+  points: PointFeature[],
+  view: MapViewState,
+): { notes: NoteRef[] } | null {
+  if (notes.length === 0) return null;
+  const zoom = Number.isFinite(view.zoom) ? view.zoom : 18;
+  const taken: Rect[] = [];
+  for (const point of points) {
+    const at = world(point.position, zoom);
+    const r = point.kind === "passing" ? 8 : 14;
+    taken.push({ x: at.x - r, y: at.y - r, w: r * 2, h: r * 2 });
+  }
+  for (const line of lines) {
+    if (line.path.length < 2) continue;
+    const mid = pathMidpoint(line.path);
+    if (!mid) continue;
+    const at = world(mid, zoom);
+    taken.push({ x: at.x - 28, y: at.y - 10, w: 56, h: 20 });
+  }
+  const next = notes.map((note) => {
+    const anchor = note.anchor ?? note.at;
+    const origin = world(anchor, zoom);
+    let best = { x: origin.x + 22, y: origin.y - 22, score: Infinity, callout: false };
+    for (const dist of [22, 36, 58]) {
+      for (let dir = 0; dir < 8; dir += 1) {
+        const ang = dir * (Math.PI / 4) - Math.PI / 2;
+        const x = origin.x + Math.cos(ang) * dist;
+        const y = origin.y + Math.sin(ang) * dist;
+        const rect = { x: x - 12, y: y - 12, w: 24, h: 24 };
+        const score = blocked(rect, taken) + (dist > 36 ? 500 : 0);
+        if (score < best.score) best = { x, y, score, callout: dist > 36 };
+      }
+    }
+    taken.push({ x: best.x - 12, y: best.y - 12, w: 24, h: 24 });
+    return { ...note, at: unworld(best.x, best.y, zoom), callout: note.anchor ? best.callout : false };
+  });
+  const sameNotes = next.every((note, index) => {
+    const prev = notes[index];
+    return prev && note.callout === prev.callout && Math.abs(note.at.lat - prev.at.lat) < 1e-7 && Math.abs(note.at.lng - prev.at.lng) < 1e-7;
+  });
+  if (sameNotes) return null;
+  return { notes: next };
 }
 
 export function optimizeLayout(

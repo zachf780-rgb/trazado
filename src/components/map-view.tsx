@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { usePlantStore } from "@/lib/store";
+import { MapChrome } from "@/components/map-chrome";
 import { lineLabelBitmap } from "@/lib/kml";
 import { canResize, isLineTool, isPointTool, isSnapTarget, joinsAtEnds, lineOpacity, linePaint, linePreset, lineWidth, lineWeightOf, objectScale, pedestalDir, pedestalPixels, pointLabelColor, tintHex, vaultPixels } from "@/lib/presets";
 import {
@@ -31,25 +32,28 @@ import {
   spanCalloutStep,
   readableRotation,
   slashMarks,
+  normalizeBox,
+  snappedTargets,
 } from "@/lib/geo";
 import { pedestalIconDataUrl, pointIconDataUrl, vaultIconDataUrl } from "@/lib/icons";
 import type { LabelSide, LatLng, LineKind, PointKind } from "@/lib/types";
-import { escapeHtml } from "@/lib/utils";
+import { escapeHtml, uid } from "@/lib/utils";
 
 const OSM = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 23,
   maxNativeZoom: 19,
   attribution: "&copy; OpenStreetMap",
+  crossOrigin: "anonymous",
 });
 
 const SAT = L.tileLayer(
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-  { maxZoom: 23, maxNativeZoom: 19, attribution: "Tiles &copy; Esri" },
+  { maxZoom: 23, maxNativeZoom: 19, attribution: "Tiles &copy; Esri", crossOrigin: "anonymous" },
 );
 
 const SAT_LABELS = L.tileLayer(
   "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-  { maxZoom: 23, maxNativeZoom: 19, attribution: "" },
+  { maxZoom: 23, maxNativeZoom: 19, attribution: "", crossOrigin: "anonymous" },
 );
 
 function footageIcon(footage: string, detail: string, color: string, plate = false, glow = false, size: "xs" | "sm" | "md" | "lg" | "xl" = "md", rotate = 0): L.DivIcon {
@@ -261,6 +265,18 @@ function gearPoints(points: { kind: PointKind; position: LatLng }[]): LatLng[] {
   return points.filter((point) => isSnapTarget(point.kind)).map((point) => point.position);
 }
 
+function labelLifted(at: LatLng | null | undefined, frames: { south: number; north: number; west: number; east: number; liftLabels?: boolean }[]): boolean {
+  if (!at) return false;
+  return frames.some((frame) => {
+    if (!frame.liftLabels) return false;
+    const south = Math.min(frame.south, frame.north);
+    const north = Math.max(frame.south, frame.north);
+    const west = Math.min(frame.west, frame.east);
+    const east = Math.max(frame.west, frame.east);
+    return at.lat >= south && at.lat <= north && at.lng >= west && at.lng <= east;
+  });
+}
+
 function toLL(ll: LatLng): L.LatLng {
   return L.latLng(ll.lat, ll.lng);
 }
@@ -284,6 +300,7 @@ function paintParallel(
     fiberCount2: string;
     offsetFt: number;
     joinEnds: boolean;
+    snaps: LatLng[];
   }[] = [];
   for (const line of lines) {
     if (!line.parallel || line.path.length < 2) continue;
@@ -305,6 +322,7 @@ function paintParallel(
       fiberCount2: line.fiberCount2,
       offsetFt,
       joinEnds: line.joinEnds,
+      snaps: line.snaps ?? [],
     });
   }
   const open: { id: string; kind: LineKind; path: LatLng[]; offsetFt: number; drawn: LatLng[] }[] = [];
@@ -313,7 +331,8 @@ function paintParallel(
     const targets = points
       .filter((p) => p.kind === "pedestal" || p.kind === "vault" || p.kind === "mdu" || p.kind === "pole")
       .map((p) => p.position);
-    const path = parallelPath(line.path, line.offsetFt, joinMask(line.path, targets, canJoin, []));
+    const snapped = (line.snaps ?? []).filter((snap) => targets.some((gear) => haversineFeet(snap, gear) <= 0.5));
+    const path = parallelPath(line.path, line.offsetFt, joinMask(line.path, snapped, canJoin, [], 0.5));
     if (path.length < 2) continue;
     if (!canJoin) {
       open.push({ id: line.id, kind: line.kind, path: line.path, offsetFt: line.offsetFt, drawn: path });
@@ -350,6 +369,40 @@ function paintParallel(
   }
 }
 
+function nearestPlant(map: L.Map, click: LatLng, points: { kind: string; position: LatLng }[], lines: { kind: string; path: LatLng[] }[]): LatLng | null {
+  const here = map.latLngToContainerPoint([click.lat, click.lng]);
+  const best: { d: number; at: LatLng | null } = { d: Infinity, at: null };
+  const consider = (at: LatLng, px: L.Point) => {
+    const d = here.distanceTo(px);
+    if (d <= 22 && d < best.d) {
+      best.d = d;
+      best.at = at;
+    }
+  };
+  for (const point of points) {
+    if (point.kind === "passing" || point.kind === "pin") continue;
+    consider(point.position, map.latLngToContainerPoint([point.position.lat, point.position.lng]));
+  }
+  for (const line of lines) {
+    if (line.kind === "road" || line.path.length < 2) continue;
+    for (let i = 0; i < line.path.length - 1; i += 1) {
+      const a = line.path[i];
+      const b = line.path[i + 1];
+      if (!a || !b) continue;
+      const pa = map.latLngToContainerPoint([a.lat, a.lng]);
+      const pb = map.latLngToContainerPoint([b.lat, b.lng]);
+      const abx = pb.x - pa.x;
+      const aby = pb.y - pa.y;
+      const len2 = abx * abx + aby * aby || 1;
+      const t = Math.max(0, Math.min(1, ((here.x - pa.x) * abx + (here.y - pa.y) * aby) / len2));
+      const px = L.point(pa.x + abx * t, pa.y + aby * t);
+      const at = map.containerPointToLatLng(px);
+      consider({ lat: at.lat, lng: at.lng }, px);
+    }
+  }
+  return best.at;
+}
+
 export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -363,6 +416,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
   const labelsRef = useRef<L.TileLayer>(SAT_LABELS);
   const draggingRef = useRef(false);
   const touchingRef = useRef(false);
+  const [mapLive, setMapLive] = useState<L.Map | null>(null);
   const [zoomGen, setZoomGen] = useState(0);
 
   const lines = usePlantStore((s) => s.lines);
@@ -373,6 +427,8 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
   const draft = usePlantStore((s) => s.draft);
   const pointer = usePlantStore((s) => s.pointer);
   const tool = usePlantStore((s) => s.tool);
+  const notes = usePlantStore((s) => s.notes);
+  const frames = usePlantStore((s) => s.frames);
   const lineInk = usePlantStore((s) => s.lineInk);
   const shift = usePlantStore((s) => s.shift);
   const flyTo = usePlantStore((s) => s.flyTo);
@@ -426,6 +482,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
     eggRef.current = eggLayer;
     parallelRef.current = parallelLayer;
     mapRef.current = map;
+    setMapLive(map);
     map.on("zoomend", () => setZoomGen((n) => n + 1));
 
     let gestureUntil = 0;
@@ -464,6 +521,17 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
       }
       if (s.tool === "polygon" || s.tool === "overlay") {
         s.extendDraft(ll);
+        return;
+      }
+      if (s.tool === "note") {
+        const anchor = nearestPlant(map, ll, s.points, s.lines);
+        if (!anchor) {
+          s.addNote(ll, null);
+          return;
+        }
+        const px = map.latLngToContainerPoint([anchor.lat, anchor.lng]);
+        const beside = map.containerPointToLatLng(L.point(px.x + 16, px.y - 16));
+        s.addNote({ lat: beside.lat, lng: beside.lng }, anchor);
       }
     };
 
@@ -537,6 +605,69 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
     host.addEventListener("pointerdown", onPointerDown);
     host.addEventListener("pointerup", onPointerUp);
     host.addEventListener("pointercancel", onPointerUp);
+    let frameDraw: { a: LatLng; id: number; moved: boolean } | null = null;
+    const finishFrame = (a: LatLng, b: LatLng) => {
+      const box = normalizeBox(a, b);
+      const sw = map.latLngToContainerPoint([box.south, box.west]);
+      const ne = map.latLngToContainerPoint([box.north, box.east]);
+      const width = Math.abs(ne.x - sw.x);
+      const height = Math.abs(ne.y - sw.y);
+      if (width < 16 || height < 16) return;
+      const left = Math.min(sw.x, ne.x);
+      const top = Math.min(sw.y, ne.y);
+      const origin = map.containerPointToLatLng(L.point(left + width + 16, Math.max(8, top)));
+      const far = map.containerPointToLatLng(L.point(left + width + 16 + Math.max(200, Math.min(320, width * 1.3)), Math.max(8, top) + Math.max(150, Math.min(240, height * 1.3))));
+      usePlantStore.getState().addFrame({
+        id: uid(),
+        ...box,
+        viewSouth: Math.min(origin.lat, far.lat),
+        viewNorth: Math.max(origin.lat, far.lat),
+        viewWest: Math.min(origin.lng, far.lng),
+        viewEast: Math.max(origin.lng, far.lng),
+        closer: 0.3,
+        liftLabels: false,
+        linkColor: "#f5d90a",
+      });
+    };
+    const onFrameDown = (ev: PointerEvent) => {
+      if (usePlantStore.getState().tool !== "frame" || ev.button !== 0) return;
+      const target = ev.target as HTMLElement | null;
+      if (target?.closest(".leaflet-control")) return;
+      const ll = map.mouseEventToLatLng(ev);
+      const point = { lat: ll.lat, lng: ll.lng };
+      const draft = usePlantStore.getState().draft;
+      const a = draft?.mode === "frame" && draft.a ? draft.a : point;
+      if (!draft || draft.mode !== "frame") usePlantStore.getState().extendDraft(point);
+      frameDraw = { a, id: ev.pointerId, moved: false };
+      ev.preventDefault();
+    };
+    const onFrameMove = (ev: PointerEvent) => {
+      if (!frameDraw || ev.pointerId !== frameDraw.id) return;
+      const ll = map.mouseEventToLatLng(ev);
+      const here = map.latLngToContainerPoint(ll);
+      const start = map.latLngToContainerPoint([frameDraw.a.lat, frameDraw.a.lng]);
+      if (start.distanceTo(here) > 6) frameDraw.moved = true;
+      usePlantStore.getState().setPointer({ lat: ll.lat, lng: ll.lng });
+    };
+    const onFrameUp = (ev: PointerEvent) => {
+      if (!frameDraw || ev.pointerId !== frameDraw.id) return;
+      const draw = frameDraw;
+      frameDraw = null;
+      const ll = map.mouseEventToLatLng(ev);
+      const point = { lat: ll.lat, lng: ll.lng };
+      if (draw.moved) {
+        finishFrame(draw.a, point);
+        return;
+      }
+      const draft = usePlantStore.getState().draft;
+      if (draft?.mode === "frame" && draft.a && map.latLngToContainerPoint([draft.a.lat, draft.a.lng]).distanceTo(map.latLngToContainerPoint(ll)) > 8) {
+        finishFrame(draft.a, point);
+      }
+    };
+    host.addEventListener("pointerdown", onFrameDown);
+    host.addEventListener("pointermove", onFrameMove);
+    host.addEventListener("pointerup", onFrameUp);
+    host.addEventListener("pointercancel", onFrameUp);
     const onDrop = (ev: DragEvent) => {
       ev.preventDefault();
       const file = ev.dataTransfer?.files[0];
@@ -924,6 +1055,9 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
           const to = line.path[line.path.length - 1]!;
           const mid = pathMidpoint(line.path);
           if (mid) {
+            if (line.callout && labelLifted(mid, frames)) {
+              /* moved into a frame */
+            } else {
             const text = line.remove ? `remove ${roadName}` : roadName;
             const at = line.callout ? calloutAt(mid, spanCalloutDir(line.calloutDirs, 0), calloutFeet(spanCalloutStep(line.calloutSteps, 0))) : mid;
             if (line.callout) {
@@ -936,10 +1070,15 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
             }
             L.marker([at.lat, at.lng], {
               icon: footageIcon(text, "", "#e4e4e7", line.callout || labelPlate, false, line.labelSize || "md", line.callout ? 0 : labelTurn(map, from, to, text, line.labelSize || "md")),
-              interactive: false,
+              interactive: line.callout && tool === "select",
               keyboard: false,
               zIndexOffset: 400,
+            }).on("click", (e) => {
+              if (!line.callout || usePlantStore.getState().tool !== "select") return;
+              L.DomEvent.stopPropagation(e);
+              usePlantStore.getState().select({ type: "callout", id: line.id });
             }).addTo(group);
+            }
           }
         }
       } else footageSpans(line.path, gearPoints(points), line.splits ?? [], (line.dots ?? []).map((dot) => dot.at)).forEach((span, index) => {
@@ -953,6 +1092,7 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
         const text = `${footage}${detail}`;
         if (!footage && !detail) return;
         if (line.callout) {
+          if (labelLifted(span.labelAt, frames)) return;
           const at = calloutAt(span.labelAt, spanCalloutDir(line.calloutDirs, index), calloutFeet(spanCalloutStep(line.calloutSteps, index)));
           L.polyline([[span.labelAt.lat, span.labelAt.lng], [at.lat, at.lng]], {
             color: tintHex(paint, 0.45),
@@ -962,9 +1102,13 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
           }).addTo(group);
           L.marker([at.lat, at.lng], {
             icon: footageIcon(footage, detail, paint, true, false, size, 0),
-            interactive: false,
+            interactive: tool === "select",
             keyboard: false,
             zIndexOffset: 400,
+          }).on("click", (e) => {
+            if (usePlantStore.getState().tool !== "select") return;
+            L.DomEvent.stopPropagation(e);
+            usePlantStore.getState().select({ type: "callout", id: line.id });
           }).addTo(group);
           return;
         }
@@ -1167,9 +1311,69 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
       }
     }
 
+    for (const note of notes) {
+      if (labelLifted(note.at, frames) || labelLifted(note.anchor, frames)) continue;
+      const selected = selection?.type === "note" && selection.id === note.id;
+      if (note.callout && note.anchor) {
+        L.polyline(
+          [
+            [note.anchor.lat, note.anchor.lng],
+            [note.at.lat, note.at.lng],
+          ],
+          { color: "#f5d90a", weight: 1.25, dashArray: "2 3", interactive: false },
+        ).addTo(group);
+      }
+      const marker = L.marker([note.at.lat, note.at.lng], {
+        draggable: selected,
+        keyboard: false,
+        zIndexOffset: 1400,
+        icon: L.divIcon({
+          className: "ref-badge-wrap",
+          html: `<span class="ref-badge${selected ? " is-selected" : ""}">${note.n}</span>`,
+          iconSize: [22, 22],
+          iconAnchor: [11, 11],
+        }),
+      });
+      marker.on("click", (e) => {
+        L.DomEvent.stopPropagation(e);
+        usePlantStore.getState().select({ type: "note", id: note.id });
+      });
+      if (selected) {
+        marker.on("dragstart", () => {
+          draggingRef.current = true;
+          usePlantStore.getState().checkpoint();
+        });
+        marker.on("dragend", () => {
+          draggingRef.current = false;
+          const ll = marker.getLatLng();
+          const anchor = note.anchor;
+          const far = anchor ? map.latLngToContainerPoint([anchor.lat, anchor.lng]).distanceTo(map.latLngToContainerPoint(ll)) > 28 : false;
+          usePlantStore.getState().updateNote(note.id, { at: { lat: ll.lat, lng: ll.lng }, callout: Boolean(anchor) && (note.callout || far) });
+        });
+      }
+      marker.addTo(group);
+    }
+
+    for (const frame of frames) {
+      const selected = selection?.type === "frame" && selection.id === frame.id;
+      const source = L.rectangle(
+        [
+          [frame.south, frame.west],
+          [frame.north, frame.east],
+        ],
+        { color: frame.linkColor || "#f5d90a", weight: selected ? 2 : 1.5, dashArray: "4 4", fill: false, interactive: tool === "select" },
+      );
+      source.on("click", (e) => {
+        if (usePlantStore.getState().tool !== "select") return;
+        L.DomEvent.stopPropagation(e);
+        usePlantStore.getState().select({ type: "frame", id: frame.id });
+      });
+      source.addTo(group);
+    }
+
     const parallel = parallelRef.current;
     if (parallel) paintParallel(map, parallel, lines, points);
-  }, [lines, points, polygons, overlays, selection, tool, labelPlate, zoomGen]);
+  }, [lines, points, polygons, overlays, notes, frames, selection, tool, labelPlate, zoomGen]);
 
   useEffect(() => {
     const group = draftRef.current;
@@ -1276,6 +1480,18 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
       for (const p of draft.path) ghostPoint(p, "poly");
     }
 
+    if (draft.mode === "frame" && draft.a) {
+      ghostPoint(draft.a, "ug-new");
+      if (pointer) {
+        L.rectangle(L.latLngBounds(toLL(draft.a), toLL(pointer)), {
+          color: "#f5d90a",
+          weight: 1.5,
+          dashArray: "4 4",
+          fill: false,
+        }).addTo(group);
+      }
+    }
+
     if (draft.mode === "overlay" && draft.a) {
       ghostPoint(draft.a, "ug-new");
       if (pointer) {
@@ -1296,7 +1512,13 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
     const map = mapRef.current;
     if (!map) return;
     map.getContainer().classList.toggle("drawing-cursor", tool !== "select" || eggPlacing);
-  }, [tool, eggPlacing]);
+    if (tool === "frame") map.dragging.disable();
+    else map.dragging.enable();
+  }, [tool, eggPlacing, mapLive]);
 
-  return <div ref={hostRef} className="absolute inset-0 z-0" />;
+  return (
+    <div ref={hostRef} data-map="1" className="absolute inset-0 z-0">
+      <MapChrome map={mapLive} onGesture={(active) => { draggingRef.current = active; }} />
+    </div>
+  );
 }

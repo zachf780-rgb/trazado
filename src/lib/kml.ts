@@ -4,6 +4,7 @@ import type {
   LineFeature,
   LineKind,
   LabelSize,
+  FrameFeature,
   OverlayFeature,
   PlantProject,
   PointFeature,
@@ -29,17 +30,27 @@ import {
   nearestLineKind,
   plantTotals,
   pointPreset,
+  pointLabelColor,
   isPedType,
   isVaultType,
   pedestalColor,
   pedestalDir,
   vaultColor,
 } from "./presets";
-import { footageSpans, formatFeet, joinMask, parallelPath, offsetBeside, objectSpans, pathFrame, pathFootage, pathMidpoint, reportedFeet, spanShownFeet, squareLine2, slashMarks, slotCableTag, spanParts, calloutAt, calloutFeet, spanCalloutDir, spanCalloutStep } from "./geo";
+import { footageSpans, formatFeet, haversineFeet, joinMask, parallelPath, offsetBeside, objectSpans, pathFrame, pathFootage, pathMidpoint, reportedFeet, spanShownFeet, squareLine2, slashMarks, slotCableTag, spanParts, calloutAt, calloutFeet, spanCalloutDir, spanCalloutStep } from "./geo";
 import { blobToDataUrl, dataUrlToBytes, pedestalIconDataUrl, pointIconDataUrl, poleVariantDataUrl, stampRemoveSlashes, vaultIconDataUrl } from "./icons";
 
 function coord(ll: LatLng): string {
-  return `${ll.lng},${ll.lat},0`;
+  return `${ll.lng},${ll.lat},50`;
+}
+
+function nudge(at: LatLng, side: string | undefined): LatLng {
+  const dLat = 0.00004;
+  const dLng = 0.00005;
+  if (side === "bottom") return { lat: at.lat - dLat, lng: at.lng };
+  if (side === "left") return { lat: at.lat, lng: at.lng - dLng };
+  if (side === "right") return { lat: at.lat, lng: at.lng + dLng };
+  return { lat: at.lat + dLat, lng: at.lng };
 }
 
 function coordList(path: LatLng[]): string {
@@ -129,6 +140,59 @@ function drawGlyph(
     ctx.fillText("V", x + s / 2, y + s / 2 + 0.5);
     ctx.textAlign = "left";
   }
+}
+
+function listPng(notes: { n: number; text: string }[], opacity: number): string {
+  const rows = notes.slice().sort((a, b) => a.n - b.n);
+  if (rows.length === 0 || typeof document === "undefined") return "";
+  const width = 900;
+  const measure = document.createElement("canvas").getContext("2d");
+  if (!measure) return "";
+  measure.font = "28px sans-serif";
+  const wrapped = rows.map((note) => {
+    const lines: string[] = [];
+    for (const para of note.text.split(/\n/)) {
+      const words = para.split(/\s+/).filter(Boolean);
+      let line = "";
+      for (const word of words.length ? words : [""]) {
+        const next = line ? `${line} ${word}` : word;
+        if (line && measure.measureText(next).width > width - 90) {
+          lines.push(line);
+          line = word;
+        } else line = next;
+      }
+      if (line) lines.push(line);
+    }
+    return { n: note.n, lines: lines.length ? lines : [" "] };
+  });
+  const lineH = 36;
+  const height = wrapped.reduce((sum, row) => sum + row.lines.length * lineH + 18, 24);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = Math.max(height, 48);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+  ctx.fillStyle = `rgba(17,17,19,${opacity})`;
+  ctx.fillRect(0, 0, width, canvas.height);
+  let y = 18;
+  for (const row of wrapped) {
+    ctx.fillStyle = "#f5d90a";
+    ctx.beginPath();
+    ctx.arc(28, y + 16, 16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#111113";
+    ctx.font = "bold 18px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(row.n), 28, y + 17);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "28px sans-serif";
+    row.lines.forEach((line, index) => ctx.fillText(line, 56, y + 24 + index * lineH));
+    y += row.lines.length * lineH + 18;
+  }
+  return canvas.toDataURL("image/png");
 }
 
 function legendPng(lines: LineFeature[], points: PointFeature[]): string {
@@ -488,6 +552,39 @@ function kmlPaint(hex: string, opacity: number): string {
   return `${part(alpha)}${part(b)}${part(g)}${part(r)}`;
 }
 
+function mix(a: LatLng, b: LatLng, t: number): LatLng {
+  return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+}
+
+function dashCoords(a: LatLng, b: LatLng): string[] {
+  const out: string[] = [];
+  const parts = 16;
+  for (let i = 0; i < parts; i += 2) {
+    const p0 = mix(a, b, i / parts);
+    const p1 = mix(a, b, Math.min(1, (i + 1) / parts));
+    out.push(`${p0.lng},${p0.lat},0 ${p1.lng},${p1.lat},0`);
+  }
+  return out;
+}
+
+function boxEdge(box: { south: number; north: number; west: number; east: number }, toward: LatLng): LatLng {
+  const south = Math.min(box.south, box.north);
+  const north = Math.max(box.south, box.north);
+  const west = Math.min(box.west, box.east);
+  const east = Math.max(box.west, box.east);
+  const lat = Math.min(north, Math.max(south, toward.lat));
+  const lng = Math.min(east, Math.max(west, toward.lng));
+  const inside = toward.lat > south && toward.lat < north && toward.lng > west && toward.lng < east;
+  if (!inside) return { lat, lng };
+  const choices = [
+    { d: Math.abs(toward.lat - south), at: { lat: south, lng: toward.lng } },
+    { d: Math.abs(north - toward.lat), at: { lat: north, lng: toward.lng } },
+    { d: Math.abs(toward.lng - west), at: { lat: toward.lat, lng: west } },
+    { d: Math.abs(east - toward.lng), at: { lat: toward.lat, lng: east } },
+  ].sort((left, right) => left.d - right.d);
+  return choices[0]?.at ?? { lat, lng };
+}
+
 export async function buildKmz(project: PlantProject, labelPlate = false): Promise<Blob> {
   const zip = new JSZip();
   const files = zip.folder("files");
@@ -524,7 +621,7 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
           <LabelStyle><scale>0</scale></LabelStyle>
         </Style>
         <Point>
-          <altitudeMode>clampToGround</altitudeMode>
+          <altitudeMode>relativeToGround</altitudeMode>
           <coordinates>${coord(at)}</coordinates>
         </Point>
       </Placemark>`;
@@ -533,7 +630,8 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
     return `      <Placemark>
         <name>__callout</name>
         <Style><LineStyle><color>${hexToKmlColor(hex)}</color><width>1</width></LineStyle></Style>
-        <LineString><tessellate>1</tessellate><coordinates>${coord(from)} ${coord(to)}</coordinates></LineString>
+        <LineString><altitudeMode>relativeToGround</altitudeMode>
+          <tessellate>1</tessellate><coordinates>${coord(from)} ${coord(to)}</coordinates></LineString>
       </Placemark>`;
   }
   const dotFiles = new Map<string, string>();
@@ -601,6 +699,7 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
 
   const legendUrl = legendPng(project.lines, project.points);
   if (legendUrl) files.file("legend.png", dataUrlToBytes(legendUrl).bytes);
+  const frameShots: { frame: FrameFeature; href: string }[] = [];
 
   const overlayHrefs: Record<string, string> = {};
   project.overlays.forEach((ov, i) => {
@@ -705,13 +804,15 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
           : `      <Placemark>
         <name>__remove</name>
         <styleUrl>#remove-slash-edge</styleUrl>
-        <LineString><tessellate>1</tessellate><coordinates>${coords}</coordinates></LineString>
+        <LineString><altitudeMode>relativeToGround</altitudeMode>
+          <tessellate>1</tessellate><coordinates>${coords}</coordinates></LineString>
       </Placemark>
 `;
         return `${edge}      <Placemark>
         <name>__remove</name>
         <styleUrl>#${red ? "remove-slash" : "remove-slash-white"}</styleUrl>
-        <LineString><tessellate>1</tessellate><coordinates>${coords}</coordinates></LineString>
+        <LineString><altitudeMode>relativeToGround</altitudeMode>
+          <tessellate>1</tessellate><coordinates>${coords}</coordinates></LineString>
       </Placemark>`;
       })
       .join("\n");
@@ -721,7 +822,8 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
     return `      <Placemark>
         <name>__remove</name>
         <styleUrl>#remove-shade</styleUrl>
-        <LineString><tessellate>1</tessellate><coordinates>${coordList(path)}</coordinates></LineString>
+        <LineString><altitudeMode>relativeToGround</altitudeMode>
+          <tessellate>1</tessellate><coordinates>${coordList(path)}</coordinates></LineString>
       </Placemark>
 ${slashXml(slashMarks(path))}`;
   }
@@ -787,7 +889,8 @@ ${slashXml(slashMarks(path))}`;
         const targets = project.points
           .filter((p) => p.kind === "pedestal" || p.kind === "vault" || p.kind === "mdu" || p.kind === "pole")
           .map((p) => p.position);
-        const twin = line.parallel && canJoin ? parallelPath(line.path, 12, joinMask(line.path, targets, canJoin, [])) : [];
+        const snapped = (line.snaps ?? []).filter((snap) => targets.some((gear) => haversineFeet(snap, gear) <= 0.5));
+        const twin = line.parallel && canJoin ? parallelPath(line.path, 12, joinMask(line.path, snapped, canJoin, [], 0.5)) : [];
         const twinMark =
           twin.length >= 2
             ? `      <Placemark>
@@ -799,6 +902,7 @@ ${slashXml(slashMarks(path))}`;
           </LineStyle>
         </Style>
         <LineString>
+          <altitudeMode>relativeToGround</altitudeMode>
           <tessellate>1</tessellate>
           <coordinates>${coordList(twin)}</coordinates>
         </LineString>
@@ -843,6 +947,7 @@ ${slashXml(slashMarks(path))}`;
           `<Data name="id"><value>${escapeXml(line.id)}</value></Data>`,
           (line.splits ?? []).length > 0 ? `<Data name="splits"><value>${(line.splits ?? []).map((at) => `${at.lat},${at.lng}`).join(";")}</value></Data>` : "",
           (line.dots ?? []).length > 0 ? `<Data name="dots"><value>${(line.dots ?? []).map((dot) => `${dot.at.lat},${dot.at.lng},${escapeXml(dot.peer)},${dot.show ? 1 : 0}`).join(";")}</value></Data>` : "",
+          (line.snaps ?? []).length > 0 ? `<Data name="snaps"><value>${(line.snaps ?? []).map((snap) => `${snap.lat},${snap.lng}`).join(";")}</value></Data>` : "",
           line.name.trim() ? `<Data name="lineName"><value>${escapeXml(line.name.trim())}</value></Data>` : "",
           line.kind === "line" && line.stroke ? `<Data name="stroke"><value>${escapeXml(line.stroke)}</value></Data>` : "",
           line.kind === "line" && line.weight ? `<Data name="weight"><value>${line.weight}</value></Data>` : "",
@@ -893,7 +998,7 @@ ${slashXml(slashMarks(path))}`;
           <LabelStyle><scale>0</scale></LabelStyle>
         </Style>
         <Point>
-          <altitudeMode>clampToGround</altitudeMode>
+          <altitudeMode>relativeToGround</altitudeMode>
           <coordinates>${coord(dot.at)}</coordinates>
         </Point>
       </Placemark>`;
@@ -906,6 +1011,7 @@ ${slashXml(slashMarks(path))}`;
         ${meta ? `<ExtendedData>${meta}</ExtendedData>` : ""}
         ${lineStyle}
         <LineString>
+          <altitudeMode>relativeToGround</altitudeMode>
           <tessellate>1</tessellate>
           <coordinates>${coordList(line.path)}</coordinates>
         </LineString>
@@ -981,22 +1087,22 @@ ${inner}
         const showLabel = Boolean(named) || p.remove;
         const visibleName = p.remove ? (named ? `remove ${named}` : "remove") : named || fallback;
         const nameSize = p.labelSize === "xl" ? "xl" : p.labelSize === "lg" ? "lg" : p.labelSize === "sm" || p.labelSize === "xs" ? "sm" : "md";
-        const nameScale = nameSize === "xl" ? 1 : nameSize === "lg" ? 0.7 : nameSize === "sm" ? 0.55 : 0.62;
         const style = `<Style>
           <IconStyle>
             <scale>${iconScale}</scale>
             <hotSpot x="0.5" y="0.5" xunits="fraction" yunits="fraction"/>
             <Icon><href>${escapeXml(iconHref)}</href></Icon>
           </IconStyle>
-          <LabelStyle><color>ffffffff</color><colorMode>normal</colorMode><scale>${showLabel ? nameScale : 0}</scale></LabelStyle>
+          <LabelStyle><scale>0</scale></LabelStyle>
         </Style>`;
         return `      <Placemark>
-        <name>${escapeXml(visibleName)}</name>
+        <name></name>
         ${kmlDescription(p.description)}
         <ExtendedData>${data}</ExtendedData>
         ${style}
-        <Point><coordinates>${coord(p.position)}</coordinates></Point>
-      </Placemark>`;
+        <Point><altitudeMode>relativeToGround</altitudeMode><coordinates>${coord(p.position)}</coordinates></Point>
+      </Placemark>
+${showLabel ? textMark(visibleName, nudge(p.position, p.labelSide), "#f8fafc", nameSize === "xl" ? "xl" : nameSize === "lg" ? "lg" : nameSize === "sm" ? "sm" : "md", false, "#111113") : ""}`;
       })
       .join("\n");
     return `    <Folder>
@@ -1015,17 +1121,8 @@ ${project.polygons
     const ring = [...poly.path, poly.path[0]].filter(Boolean) as LatLng[];
     const lat = poly.path.reduce((sum, point) => sum + point.lat, 0) / poly.path.length;
     const lng = poly.path.reduce((sum, point) => sum + point.lng, 0) / poly.path.length;
-    const labelScale = poly.labelSize === "xl" ? 1.13 : poly.labelSize === "lg" ? 0.88 : poly.labelSize === "md" ? 0.69 : 0.5;
     const label = poly.name.trim()
-      ? `      <Placemark>
-        <name>${escapeXml(poly.name.trim())}</name>
-        <ExtendedData><Data name="polyLabel"><value>1</value></Data></ExtendedData>
-        <Style>
-          <IconStyle><scale>0</scale></IconStyle>
-          <LabelStyle><color>ffffffff</color><colorMode>normal</colorMode><scale>${labelScale}</scale></LabelStyle>
-        </Style>
-        <Point><altitudeMode>clampToGround</altitudeMode><coordinates>${coord({ lat, lng })}</coordinates></Point>
-      </Placemark>`
+      ? textMark(poly.name.trim(), { lat, lng }, "#f8fafc", poly.labelSize === "xl" ? "xl" : poly.labelSize === "lg" ? "lg" : poly.labelSize === "md" ? "md" : "sm", false, "#111113")
       : "";
     return `      <Placemark>
         <name>${escapeXml(poly.name)}</name>
@@ -1043,6 +1140,7 @@ ${project.polygons
           <LabelStyle><scale>0</scale></LabelStyle>
         </Style>
         <Polygon>
+          <altitudeMode>relativeToGround</altitudeMode>
           <tessellate>1</tessellate>
           <outerBoundaryIs>
             <LinearRing>
@@ -1070,7 +1168,9 @@ ${project.overlays
           .toString(16)
           .padStart(2, "0")}ffffff</color>
         <Icon><href>${escapeXml(overlayHrefs[ov.id] ?? "")}</href></Icon>
-        <LatLonBox>
+        <altitude>50</altitude>
+      <altitudeMode>relativeToGround</altitudeMode>
+      <LatLonBox>
           <north>${ov.north}</north>
           <south>${ov.south}</south>
           <east>${ov.east}</east>
@@ -1090,6 +1190,61 @@ ${project.overlays
       <screenXY x="0.02" y="0.04" xunits="fraction" yunits="fraction"/>
       <size x="0" y="0" xunits="pixels" yunits="pixels"/>
     </ScreenOverlay>`
+    : "";
+
+  const frameGuide = false
+    ? `    <Folder>
+      <name>Frames</name>
+${(project.frames ?? [])
+  .flatMap((frame) => {
+    const color = kmlPaint(frame.linkColor || "#f5d90a", 1);
+    const source = { south: frame.south, north: frame.north, west: frame.west, east: frame.east };
+    const view = { south: frame.viewSouth, north: frame.viewNorth, west: frame.viewWest, east: frame.viewEast };
+    const south = Math.min(source.south, source.north);
+    const north = Math.max(source.south, source.north);
+    const west = Math.min(source.west, source.east);
+    const east = Math.max(source.west, source.east);
+    const corners: LatLng[] = [
+      { lat: south, lng: west },
+      { lat: south, lng: east },
+      { lat: north, lng: east },
+      { lat: north, lng: west },
+    ];
+    const srcMid = { lat: (south + north) / 2, lng: (west + east) / 2 };
+    const viewMid = {
+      lat: (Math.min(view.south, view.north) + Math.max(view.south, view.north)) / 2,
+      lng: (Math.min(view.west, view.east) + Math.max(view.west, view.east)) / 2,
+    };
+    const pieces = [0, 1, 2, 3].flatMap((index) => dashCoords(corners[index]!, corners[(index + 1) % 4]!));
+    pieces.push(...dashCoords(boxEdge(source, viewMid), boxEdge(view, srcMid)));
+    return pieces.map(
+      (coordinates) => `      <Placemark>
+        <name>Frame</name>
+        <Style><LineStyle><color>${color}</color><width>2</width></LineStyle></Style>
+        <LineString><altitudeMode>relativeToGround</altitudeMode>
+          <tessellate>1</tessellate><coordinates>${coordinates}</coordinates></LineString>
+      </Placemark>`,
+    );
+  })
+  .join("\n")}
+${frameShots
+  .map(
+    ({ frame, href }) => `      <GroundOverlay>
+        <name>Frame window</name>
+        <color>ffffffff</color>
+        <Icon><href>${href}</href></Icon>
+        <altitude>0</altitude>
+        <altitudeMode>clampToGround</altitudeMode>
+        <LatLonBox>
+          <north>${Math.max(frame.viewNorth, frame.viewSouth)}</north>
+          <south>${Math.min(frame.viewNorth, frame.viewSouth)}</south>
+          <east>${Math.max(frame.viewEast, frame.viewWest)}</east>
+          <west>${Math.min(frame.viewEast, frame.viewWest)}</west>
+        </LatLonBox>
+      </GroundOverlay>`,
+  )
+  .join("\n")}
+    </Folder>`
     : "";
 
   const bypassFolder = (() => {
@@ -1118,6 +1273,7 @@ ${ties
           <LineStyle><color>${color}</color><width>${lineWidth(tie.kind)}</width></LineStyle>
         </Style>
         <LineString>
+          <altitudeMode>relativeToGround</altitudeMode>
           <tessellate>1</tessellate>
           <coordinates>${coordList(tie.path)}</coordinates>
         </LineString>
@@ -1127,14 +1283,19 @@ ${ties
     </Folder>`;
   })();
 
+  const plainDesc = descRows
+    .replace(/<\/tr>/g, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/ *\n */g, "\n")
+    .trim();
+
   const kml = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">
   <Document>
     <name>${escapeXml(project.projectName)}</name>
-    <description><![CDATA[
-      <h3>Trazado</h3>
-      <table cellpadding="4">${descRows}</table>
-    ]]></description>
+    <ExtendedData><Data name="trazadoExtras"><value>${escapeXml(JSON.stringify({ notes: project.notes ?? [], board: project.board ?? null, frames: project.frames ?? [] }))}</value></Data></ExtendedData>
+    <description>${escapeXml(plainDesc)}</description>
 ${styleBlock}
 ${ALL_LINE_PRESETS.map((p) => lineFolder(p.id, p.fullLabel)).join("\n")}
 ${bypassFolder}
@@ -1265,7 +1426,7 @@ function inferPointKind(icon: string, name: string): PointFeature["kind"] {
 }
 
 export async function parsePlantFile(file: File): Promise<
-  Pick<PlantProject, "lines" | "points" | "polygons" | "overlays" | "projectName">
+  Pick<PlantProject, "lines" | "points" | "polygons" | "overlays" | "projectName" | "notes" | "board" | "frames">
 > {
   let kmlText = "";
   const zipFiles = new Map<string, Blob>();
@@ -1357,6 +1518,10 @@ export async function parsePlantFile(file: File): Promise<
         if (!Number.isFinite(lat) || !Number.isFinite(lng) || !peer) return [];
         return [{ at: { lat, lng }, peer, show: bits[3] !== "0" }];
       });
+      const snaps = dataValue(pm, "snaps").split(";").flatMap((part) => {
+        const [lat, lng] = part.split(",").map(Number);
+        return Number.isFinite(lat) && Number.isFinite(lng) ? [{ lat, lng }] : [];
+      });
       lines.push({
         id: storedId || crypto.randomUUID(),
         kind: isLineKind(kind) ? kind : "line",
@@ -1384,6 +1549,7 @@ export async function parsePlantFile(file: File): Promise<
         name: dataValue(pm, "lineName") || (kind === "road" ? name : ""),
         splits,
         dots,
+        snaps,
         pipeRoles: dataValue(pm, "pipeRoles").split(",").filter((role): role is "ug" | "width" | "share" => role === "ug" || role === "width" || role === "share"),
         occupied: dataValue(pm, "occupied") === "1",
         hideSpan: dataValue(pm, "hideSpan") === "1",
@@ -1536,7 +1702,17 @@ export async function parsePlantFile(file: File): Promise<
   const projectName =
     textContent(doc.getElementsByTagName("name")[0]) || file.name.replace(/\.[^.]+$/, "");
 
-  return { projectName, lines, points, polygons, overlays };
+  let extras: { notes?: PlantProject["notes"]; board?: PlantProject["board"]; frames?: PlantProject["frames"] } = {};
+  const extraNode = Array.from(doc.getElementsByTagName("Data")).find((el) => el.getAttribute("name") === "trazadoExtras");
+  if (extraNode) {
+    try {
+      extras = JSON.parse(textContent(extraNode.getElementsByTagName("value")[0]));
+    } catch {
+      extras = {};
+    }
+  }
+
+  return { projectName, lines, points, polygons, overlays, notes: extras.notes ?? [], board: extras.board ?? null, frames: extras.frames ?? [] };
 }
 
 function defaultImportedName(kind: PointFeature["kind"], name: string): string {

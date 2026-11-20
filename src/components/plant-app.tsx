@@ -2,11 +2,13 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { jsx, jsxs } from "react/jsx-runtime";
 import {
+  Camera,
   Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
+  Hash,
   ImagePlus,
   Layers,
   LocateFixed,
@@ -14,6 +16,7 @@ import {
   MoreHorizontal,
   MousePointer2,
   Pentagon,
+  Scan,
   Redo2,
   Search,
   Spline,
@@ -151,6 +154,8 @@ export function PlantApp() {
 	const [mounted, setMounted] = useState(false);
 	const [MapCmp, setMapCmp] = useState(null);
 	const [basemap, setBasemap] = useState("satellite");
+	const [shots, setShots] = useState([]);
+	const [shooting, setShooting] = useState(false);
 	const [query, setQuery] = useState("");
 	const [results, setResults] = useState([]);
 	const [searching, setSearching] = useState(false);
@@ -168,6 +173,9 @@ export function PlantApp() {
 	const lines = usePlantStore((s) => s.lines);
 	const points = usePlantStore((s) => s.points);
 	const polygons = usePlantStore((s) => s.polygons);
+	const notes = usePlantStore((s) => s.notes);
+	const board = usePlantStore((s) => s.board);
+	const frames = usePlantStore((s) => s.frames);
 	const overlays = usePlantStore((s) => s.overlays);
 	const projectName = usePlantStore((s) => s.projectName);
 	const eggTool = usePlantStore((s) => s.eggTool);
@@ -295,6 +303,10 @@ export function PlantApp() {
 	const selectedPoint = selection?.type === "point" ? points.find((p) => p.id === selection.id) : null;
 	const selectedPolygon = selection?.type === "polygon" ? polygons.find((p) => p.id === selection.id) : null;
 	const selectedOverlay = selection?.type === "overlay" ? overlays.find((o) => o.id === selection.id) : null;
+	const selectedNote = selection?.type === "note" ? notes.find((note) => note.id === selection.id) : null;
+	const selectedFrame = selection?.type === "frame" ? frames.find((frame) => frame.id === selection.id) : null;
+	const selectedCallout = selection?.type === "callout" ? lines.find((line) => line.id === selection.id) : null;
+	const selectedBoard = selection?.type === "board" ? board : null;
 	const legendOpen = totals.usedLines.length > 0 || totals.removeLines.length > 0 || totals.usedPoints.length > 0 || totals.peds.length > 0 || totals.vaults.length > 0;
 	const canFinish = draft?.mode === "line" && draft.path.length >= 2 || draft?.mode === "polygon" && draft.path.length >= 3;
 	const showDraftBar = Boolean(draft);
@@ -327,16 +339,74 @@ export function PlantApp() {
 			toast.error(err instanceof Error ? err.message : "Download failed");
 		}
 	}
+	function mapShot(host) {
+		const view = usePlantStore.getState().view;
+		return { lat: view.lat, lng: view.lng, zoom: view.zoom, width: host.clientWidth, height: host.clientHeight };
+	}
+	async function exportPdf() {
+		const host = document.querySelector("[data-map]");
+		if (!(host instanceof HTMLElement)) return;
+		try {
+			const name = (usePlantStore.getState().projectName || "trazado").replace(/[^\w.-]+/g, "-");
+			const { exportMapPdf } = await import("@/lib/pdf");
+			await exportMapPdf(host, mapShot(host), `${name}.pdf`);
+			toast.success("PDF downloaded");
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : "PDF failed");
+		}
+	}
+	async function takeSnapshot() {
+		const host = document.querySelector("[data-map]");
+		if (!(host instanceof HTMLElement)) return;
+		try {
+			const { snapNode } = await import("@/lib/snap");
+			const image = await snapNode(host);
+			setShots((list) => [...list, { image, ...mapShot(host) }]);
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : "Snapshot failed");
+		}
+	}
+	async function downloadSnapshots() {
+		if (shots.length === 0) return;
+		try {
+			const name = (usePlantStore.getState().projectName || "trazado").replace(/[^\w.-]+/g, "-");
+			const { exportPdfPages } = await import("@/lib/pdf");
+			await exportPdfPages(shots, `${name}.pdf`);
+			setShots([]);
+			setShooting(false);
+			toast.success("PDF downloaded");
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : "PDF failed");
+		}
+	}
+	function focusOf(project) {
+		const spots = [];
+		for (const line of project.lines ?? []) for (const point of line.path ?? []) spots.push(point);
+		for (const point of project.points ?? []) if (point.position) spots.push(point.position);
+		for (const poly of project.polygons ?? []) for (const point of poly.path ?? []) spots.push(point);
+		for (const overlay of project.overlays ?? []) {
+			spots.push({ lat: overlay.south, lng: overlay.west });
+			spots.push({ lat: overlay.north, lng: overlay.east });
+		}
+		const usable = spots.filter((point) => Number.isFinite(point?.lat) && Number.isFinite(point?.lng));
+		if (!usable.length) return null;
+		const south = Math.min(...usable.map((point) => point.lat));
+		const north = Math.max(...usable.map((point) => point.lat));
+		const west = Math.min(...usable.map((point) => point.lng));
+		const east = Math.max(...usable.map((point) => point.lng));
+		const latSpan = Math.max(north - south, 0.00008);
+		const lngSpan = Math.max(east - west, 0.00008);
+		const zoom = Math.min(18, Math.max(4, Math.min(Math.log2(700 / lngSpan), Math.log2(420 / latSpan)) - 0.4));
+		return { lat: (south + north) / 2, lng: (west + east) / 2, zoom };
+	}
 	async function onImport(file) {
 		try {
 			const project = await parsePlantFile(file);
-			usePlantStore.getState().replaceProject(project);
-			const first = project.lines[0]?.path[0] ?? project.points[0]?.position ?? project.polygons[0]?.path[0];
-			if (first) usePlantStore.getState().setFlyTo({
-				lat: first.lat,
-				lng: first.lng,
-				zoom: 17
-			});
+			const focus = focusOf(project);
+			const store = usePlantStore.getState();
+			store.setGpsFollow(false);
+			store.replaceProject(focus ? { ...project, view: focus } : project);
+			if (focus) store.setFlyTo(focus);
 			toast.success("Plant loaded");
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : "Import failed");
@@ -403,8 +473,53 @@ export function PlantApp() {
 		delayDuration: 250,
 		children: /* @__PURE__ */ jsxs("div", {
 			className: "relative h-dvh w-full overflow-hidden bg-background text-foreground",
+			"data-screen": "1",
 			children: [
 				mounted && MapCmp ? /* @__PURE__ */ jsx(MapCmp, { basemap }) : null,
+				shooting ? /* @__PURE__ */ jsxs("div", {
+					className: "export-hide pointer-events-auto absolute bottom-28 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-[var(--radius-lg)] border border-border bg-elevated px-2 py-2 shadow-lg",
+					children: [
+						/* @__PURE__ */ jsxs(Button, {
+							size: "sm",
+							onClick: () => void takeSnapshot(),
+							children: [/* @__PURE__ */ jsx(Camera, { className: "size-4" }), shots.length ? ` Snapshot ${shots.length + 1}` : " Snapshot"]
+						}),
+						/* @__PURE__ */ jsx(Button, {
+							size: "sm",
+							variant: "secondary",
+							disabled: shots.length === 0,
+							onClick: () => void downloadSnapshots(),
+							children: shots.length ? `Download ${shots.length}` : "Download"
+						}),
+						/* @__PURE__ */ jsx(Button, {
+							size: "icon",
+							variant: "ghost",
+							"aria-label": "Cancel snapshots",
+							onClick: () => { setShots([]); setShooting(false); },
+							children: /* @__PURE__ */ jsx(X, { className: "size-4" })
+						})
+					]
+				}) : null,
+				board && !board.opened && notes.length > 0 ? /* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: "ref-prompt export-hide pointer-events-auto absolute top-1/2 left-1/2 z-50 rounded-md border-2 border-[#f5d90a] bg-[#111113] px-4 py-2 text-sm font-extrabold tracking-wide text-[#f5d90a]",
+					onClick: () => {
+						const view = usePlantStore.getState().view;
+						const world = 256 * 2 ** (Number.isFinite(view.zoom) ? view.zoom : 18);
+						const cos = Math.max(0.2, Math.abs(Math.cos((view.lat * Math.PI) / 180)));
+						const west = view.lng - (80 / world) * 360;
+						const north = view.lat + (20 / world) * 360 * cos;
+						usePlantStore.getState().updateBoard({
+							opened: true,
+							west,
+							north,
+							east: west + (240 / world) * 360,
+							south: north - (Math.max(72, notes.length * 26 + 16) / world) * 360 * cos
+						});
+						usePlantStore.getState().select({ type: "board" });
+					},
+					children: "Click to create list"
+				}) : null,
 				!mounted ? /* @__PURE__ */ jsx("div", { className: "absolute inset-0 bg-background" }) : null,
 				/* @__PURE__ */ jsxs("header", {
 					className: "pointer-events-none absolute inset-x-0 top-0 z-40 flex items-start justify-between gap-3 p-3 md:p-4",
@@ -641,12 +756,21 @@ export function PlantApp() {
 									})
 								]
 							})] }),
-							/* @__PURE__ */ jsxs(Button, {
-								size: "sm",
-								"aria-label": "Download",
-								onClick: () => void exportKmz(),
-								children: [/* @__PURE__ */ jsx(Download, { className: "size-4" }), "Download"]
-							})
+							/* @__PURE__ */ jsxs(DropdownMenu, { children: [/* @__PURE__ */ jsx(DropdownMenuTrigger, {
+								asChild: true,
+								children: /* @__PURE__ */ jsxs(Button, {
+									size: "sm",
+									"aria-label": "Download",
+									children: [/* @__PURE__ */ jsx(Download, { className: "size-4" }), "Download"]
+								})
+							}), /* @__PURE__ */ jsxs(DropdownMenuContent, {
+								align: "end",
+								children: [
+									/* @__PURE__ */ jsx(DropdownMenuItem, { onSelect: () => void exportKmz(), children: "KMZ" }),
+									/* @__PURE__ */ jsx(DropdownMenuItem, { onSelect: () => void exportPdf(), children: "PDF this screen" }),
+									/* @__PURE__ */ jsx(DropdownMenuItem, { onSelect: () => { setShots([]); setShooting(true); }, children: "PDF snapshots" })
+								]
+							})] }),
 						]
 					})]
 				}),
@@ -984,11 +1108,15 @@ export function PlantApp() {
 						}) : null
 					]
 				}) : null,
-				selectedLine || selectedPoint || selectedPolygon || selectedOverlay ? /* @__PURE__ */ jsx(Inspector, {
-					line: selectedLine,
+				selectedLine || selectedPoint || selectedPolygon || selectedOverlay || selectedNote || selectedFrame || selectedBoard || selectedCallout ? /* @__PURE__ */ jsx(Inspector, {
+					line: selectedCallout ? null : selectedLine,
 					point: selectedPoint,
 					polygon: selectedPolygon,
-					overlay: selectedOverlay
+					overlay: selectedOverlay,
+					note: selectedNote,
+					frame: selectedFrame,
+					board: selectedBoard,
+					callout: selectedCallout
 				}) : null,
 				/* @__PURE__ */ jsx(Dialog, {
 					open: clearOpen,
@@ -1118,12 +1246,11 @@ function DockButton({ active, onClick, label, swatch, icon, compact }) {
 	});
 }
 function AdvancedMenu({ tool, onTool, onOverlay, compact }) {
-	const ink = usePlantStore((s) => s.lineInk);
 	return /* @__PURE__ */ jsxs(DropdownMenu, { children: [/* @__PURE__ */ jsx(DropdownMenuTrigger, {
 		asChild: true,
 		children: /* @__PURE__ */ jsxs("button", {
 			type: "button",
-			className: cn("flex min-h-8 w-full items-center gap-2 rounded-[var(--radius-sm)] px-2 text-left text-xs text-muted-foreground hover:bg-surface-2 hover:text-foreground", compact && "min-h-11 min-w-14 w-auto flex-col justify-center", (tool === "line" || tool === "polygon" || tool === "overlay" || tool === "pin" || tool === "in-4" || tool === "in-2" || tool === "in-075" || tool === "road") && "bg-surface-2 text-foreground"),
+			className: cn("flex min-h-8 w-full items-center gap-2 rounded-[var(--radius-sm)] px-2 text-left text-xs text-muted-foreground hover:bg-surface-2 hover:text-foreground", compact && "min-h-11 min-w-14 w-auto flex-col justify-center", (tool === "line" || tool === "polygon" || tool === "overlay" || tool === "pin" || tool === "frame" || tool === "in-4" || tool === "in-2" || tool === "in-075" || tool === "road") && "bg-surface-2 text-foreground"),
 			children: [/* @__PURE__ */ jsx(ChevronDown, { className: "size-3.5" }), /* @__PURE__ */ jsx("span", { children: "Advanced" })]
 		})
 	}), /* @__PURE__ */ jsxs(DropdownMenuContent, {
@@ -1151,40 +1278,12 @@ function AdvancedMenu({ tool, onTool, onOverlay, compact }) {
 				children: [/* @__PURE__ */ jsx(MapPin, { className: "size-4" }), " Pin"]
 			}),
 			/* @__PURE__ */ jsxs(DropdownMenuItem, {
+				onSelect: () => onTool("frame"),
+				children: [/* @__PURE__ */ jsx(Scan, { className: "size-4" }), " Frame · pdf only"]
+			}),
+			/* @__PURE__ */ jsxs(DropdownMenuItem, {
 				onSelect: () => onTool("line"),
 				children: [/* @__PURE__ */ jsx(Spline, { className: "size-4" }), " Line"]
-			}),
-			/* @__PURE__ */ jsxs("div", {
-				className: "px-2 pb-2",
-				children: [
-					/* @__PURE__ */ jsx("p", { className: "px-1 pb-1 text-[10px] tracking-wide text-muted-foreground uppercase", children: "Line color" }),
-					/* @__PURE__ */ jsx("div", {
-						className: "flex flex-wrap gap-1 px-1",
-						children: LINE_INK_COLORS.map((color) => /* @__PURE__ */ jsx("button", {
-							type: "button",
-							className: "size-5 rounded-full border",
-							style: { background: color, borderColor: ink.color === color ? "#fff" : color === "#ffffff" ? "#52525b" : "transparent" },
-							"aria-label": `Line color ${color}`,
-							onClick: () => {
-								usePlantStore.getState().setLineInk({ color });
-								if (usePlantStore.getState().tool !== "line") onTool("line");
-							}
-						}, color))
-					}),
-					/* @__PURE__ */ jsx("p", { className: "px-1 pt-2 pb-1 text-[10px] tracking-wide text-muted-foreground uppercase", children: "Thickness" }),
-					/* @__PURE__ */ jsx("div", {
-						className: "flex gap-1 px-1",
-						children: LINE_INK_WEIGHTS.map((weight) => /* @__PURE__ */ jsx("button", {
-							type: "button",
-							className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", ink.weight === weight ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
-							onClick: () => {
-								usePlantStore.getState().setLineInk({ weight });
-								if (usePlantStore.getState().tool !== "line") onTool("line");
-							},
-							children: weight
-						}, weight))
-					})
-				]
 			}),
 			/* @__PURE__ */ jsxs(DropdownMenuItem, {
 				onSelect: () => onTool("polygon"),
@@ -1217,9 +1316,155 @@ function slotCableName(line, slot) {
 	}
 	return cableChoices(line.kind).find((choice) => choice.id === id)?.label ?? `Line ${slot}`;
 }
-function Inspector({ line, point, polygon, overlay }) {
+function Inspector({ line, point, polygon, overlay, note, frame, board, callout }) {
 	const lines = usePlantStore((s) => s.lines);
 	const points = usePlantStore((s) => s.points);
+	const notes = usePlantStore((s) => s.notes);
+	if (note || board || frame || callout) {
+		const title = note ? `Reference ${note.n} · pdf only` : frame ? "Frame · pdf only" : callout ? "Call out" : "Instructions · pdf only";
+		return /* @__PURE__ */ jsxs("div", {
+			className: "inspector-panel absolute top-[9.25rem] bottom-[9.5rem] left-2 z-30 w-[11rem] overflow-y-auto overscroll-contain rounded-[var(--radius-md)] border border-border bg-elevated/95 p-1.5 shadow-lg md:top-20 md:bottom-auto md:left-auto md:right-3 md:max-h-[calc(100dvh-12rem)] md:w-48",
+			children: [
+				/* @__PURE__ */ jsx("p", { className: "text-sm font-medium", children: title }),
+				note ? /* @__PURE__ */ jsxs("div", {
+					className: "mt-2",
+					children: [
+						/* @__PURE__ */ jsx("p", { className: "text-xs text-muted-foreground", children: "Number location" }),
+						/* @__PURE__ */ jsx("div", {
+							className: "mt-1 flex flex-wrap gap-1",
+							children: [["top", "Top"], ["bottom", "Bottom"], ["left", "Left"], ["right", "Right"]].map(([side, label]) => /* @__PURE__ */ jsx("button", {
+								type: "button",
+								className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", (note.side || "top") === side ? "border-foreground bg-foreground text-background" : "border-border"),
+								onClick: () => usePlantStore.getState().updateNote(note.id, { side }),
+								children: label
+							}, side))
+						}),
+						/* @__PURE__ */ jsxs("label", {
+							className: "mt-2 flex items-center gap-2 text-xs",
+							children: [/* @__PURE__ */ jsx("input", {
+								type: "checkbox",
+								className: "size-3.5 accent-white",
+								checked: note.callout,
+								onChange: (e) => usePlantStore.getState().updateNote(note.id, { callout: e.target.checked })
+							}), "Call out"]
+						}),
+						note.target?.type === "line" ? (() => {
+							const host = lines.find((item) => item.id === note.target?.id);
+							const count = host ? footageSpans(host.path, points.filter((item) => item.kind === "pedestal" || item.kind === "vault" || item.kind === "mdu" || item.kind === "pole").map((item) => item.position), host.splits ?? [], (host.dots ?? []).map((dot) => dot.at)).length : 0;
+							if (count < 2) return null;
+							const span = Math.max(0, Math.min(count - 1, note.span || 0));
+							return /* @__PURE__ */ jsxs("div", {
+								className: "mt-2 flex items-center gap-1",
+								children: [
+									/* @__PURE__ */ jsx("button", {
+										type: "button",
+										className: "rounded-[var(--radius-xs)] border border-border px-2 py-1 text-xs",
+										onClick: () => usePlantStore.getState().updateNote(note.id, { span: span - 1 }),
+										children: "←"
+									}),
+									/* @__PURE__ */ jsxs("span", { className: "text-xs text-muted-foreground", children: ["Span ", span + 1, " / ", count] }),
+									/* @__PURE__ */ jsx("button", {
+										type: "button",
+										className: "rounded-[var(--radius-xs)] border border-border px-2 py-1 text-xs",
+										onClick: () => usePlantStore.getState().updateNote(note.id, { span: span + 1 }),
+										children: "→"
+									})
+								]
+							});
+						})() : null
+					]
+				}) : null,
+				board ? /* @__PURE__ */ jsxs("div", {
+					className: "mt-2",
+					children: [
+						/* @__PURE__ */ jsx("p", { className: "text-xs text-muted-foreground", children: "Instructions · pdf only" }),
+						notes.slice().sort((a, b) => a.n - b.n).map((item) => /* @__PURE__ */ jsxs("label", {
+							className: "mt-2 block",
+							children: [
+								/* @__PURE__ */ jsxs("span", { className: "text-xs text-muted-foreground", children: [item.n, "."] }),
+								/* @__PURE__ */ jsx("textarea", {
+									className: cn(fieldClass, "mt-1 min-h-14 resize-y"),
+									placeholder: "Instruction",
+									value: item.text,
+									onChange: (e) => usePlantStore.getState().updateNote(item.id, { text: e.target.value })
+								})
+							]
+						}, item.id)),
+						/* @__PURE__ */ jsx("p", { className: "mt-2 text-xs text-muted-foreground", children: "Panel" }),
+						/* @__PURE__ */ jsx("div", {
+							className: "mt-1 flex flex-wrap gap-1",
+							children: [[0, "0%"], [0.25, "25%"], [0.5, "50%"], [0.75, "75%"], [1, "100%"]].map(([opacity, label]) => /* @__PURE__ */ jsx("button", {
+								type: "button",
+								className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", board.opacity === opacity ? "border-foreground bg-foreground text-background" : "border-border"),
+								onClick: () => usePlantStore.getState().updateBoard({ opacity }),
+								children: label
+							}, label))
+						}),
+						/* @__PURE__ */ jsx("p", { className: "mt-2 text-[11px] text-muted-foreground", children: "The list stays the size you make it. Zooming the map scales it with the ground. It shows only the instructions you type." })
+					]
+				}) : null,
+				frame ? /* @__PURE__ */ jsxs("div", {
+					className: "mt-2",
+					children: [
+						/* @__PURE__ */ jsx("p", { className: "text-xs text-muted-foreground", children: `Window · pdf only · ${Math.round(frame.closer * 100)}% closer than the map` }),
+						/* @__PURE__ */ jsxs("div", {
+							className: "mt-1 flex gap-1",
+							children: [
+								/* @__PURE__ */ jsx("button", {
+									type: "button",
+									className: "rounded-[var(--radius-xs)] border border-border px-2 py-1 text-xs",
+									onClick: () => usePlantStore.getState().updateFrame(frame.id, { closer: Math.max(0, frame.closer - 0.1) }),
+									children: "Farther"
+								}),
+								/* @__PURE__ */ jsx("button", {
+									type: "button",
+									className: "rounded-[var(--radius-xs)] border border-border px-2 py-1 text-xs",
+									onClick: () => usePlantStore.getState().updateFrame(frame.id, { closer: Math.min(3, frame.closer + 0.1) }),
+									children: "Closer"
+								})
+							]
+						}),
+						/* @__PURE__ */ jsxs("label", {
+							className: "mt-2 flex items-center gap-2 text-xs",
+							children: [/* @__PURE__ */ jsx("input", {
+								type: "checkbox",
+								className: "size-3.5 accent-white",
+								checked: frame.liftLabels === true,
+								onChange: (e) => usePlantStore.getState().updateFrame(frame.id, { liftLabels: e.target.checked })
+							}), "Move callouts into this window"]
+						}),
+						/* @__PURE__ */ jsx("p", { className: "mt-2 text-xs text-muted-foreground", children: "Dotted line" }),
+						/* @__PURE__ */ jsx("div", {
+							className: "mt-1 flex flex-wrap gap-1",
+							children: ["#f5d90a", "#ffffff", "#fb923c", "#f87171", "#f472b6", "#38bdf8", "#4ade80"].map((color) => /* @__PURE__ */ jsx("button", {
+								type: "button",
+								className: cn("size-5 rounded-full border", (frame.linkColor || "#f5d90a") === color ? "border-white" : "border-black/40"),
+								style: { background: color },
+								"aria-label": `Line color ${color}`,
+								onClick: () => usePlantStore.getState().updateFrame(frame.id, { linkColor: color })
+							}, color))
+						}),
+						/* @__PURE__ */ jsx("p", { className: "mt-2 text-[11px] text-muted-foreground", children: "Select the frame, then drag the dotted box to move what is framed. Drag the window to move the zoomed view. Both stay where you leave them." })
+					]
+				}) : null,
+				callout ? /* @__PURE__ */ jsx("p", { className: "mt-2 text-[11px] text-muted-foreground", children: "Delete removes this call out. The line stays." }) : null,
+				note || frame || callout ? /* @__PURE__ */ jsxs(Button, {
+					variant: "secondary",
+					size: "sm",
+					className: "mt-3 w-full",
+					onClick: () => usePlantStore.getState().deleteSelection(),
+					children: [/* @__PURE__ */ jsx(Trash2, { className: "size-4" }), " Delete"]
+				}) : null,
+				/* @__PURE__ */ jsx(Button, {
+					variant: "secondary",
+					size: "sm",
+					className: "mt-3 w-full",
+					onClick: () => usePlantStore.getState().clearSelection(),
+					children: "Done"
+				})
+			]
+		});
+	}
 	const title = line ? line.kind === "aerial-new" ? "Aerial" : linePreset(line.kind).fullLabel : point ? pointPreset(point.kind).fullLabel : polygon ? "Polygon" : "Image overlay";
 	const accent = line ? linePaint(line) : point ? pointLabelColor(point.kind) : "#d4d4d8";
 	const calloutCount = line ? line.kind === "road" ? 1 : Math.max(1, footageSpans(line.path, points.filter((item) => item.kind === "pedestal" || item.kind === "vault" || item.kind === "mdu" || item.kind === "pole").map((item) => item.position), line.splits ?? [], (line.dots ?? []).map((dot) => dot.at)).length) : 1;
@@ -1873,6 +2118,12 @@ function Inspector({ line, point, polygon, overlay }) {
 					placeholder: "Description",
 					value: line.notes,
 					onChange: (e) => usePlantStore.getState().updateLine(line.id, { notes: e.target.value })
+				}),
+				/* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: "mt-2 w-full rounded-[var(--radius-xs)] border border-border px-2 py-1 text-xs",
+					onClick: () => usePlantStore.getState().addRef({ type: "line", id: line.id }),
+					children: "Add ref · pdf only"
 				})
 			] }) : null,
 			point ? /* @__PURE__ */ jsxs(Fragment, { children: [
@@ -2080,6 +2331,12 @@ function Inspector({ line, point, polygon, overlay }) {
 					placeholder: "Description",
 					value: point.description,
 					onChange: (e) => usePlantStore.getState().updatePoint(point.id, { description: e.target.value })
+				}),
+				/* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: "mt-2 w-full rounded-[var(--radius-xs)] border border-border px-2 py-1 text-xs",
+					onClick: () => usePlantStore.getState().addRef({ type: "point", id: point.id }),
+					children: "Add ref · pdf only"
 				})
 			] }) : null,
 			polygon ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Input, {
