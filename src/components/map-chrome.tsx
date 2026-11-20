@@ -116,18 +116,28 @@ export function MapChrome({
             return edges.map((edge, index) => (
               <div
                 key={`${frame.id}-edge-${index}`}
+                data-frame-edge="1"
                 className="pointer-events-auto absolute"
-                style={{ ...edge, cursor: "pointer" }}
-                onPointerDown={(ev) =>
-                  beginAdjust(ev, map, onGesture, () => usePlantStore.getState().select({ type: "frame", id: frame.id }), (dLat, dLng) => {
+                style={{ ...edge, cursor: selection?.type === "frame" && selection.id === frame.id ? "grab" : "pointer" }}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  if (usePlantStore.getState().tool !== "select") return;
+                  usePlantStore.getState().select({ type: "frame", id: frame.id });
+                }}
+                onPointerDown={(ev) => {
+                  if (usePlantStore.getState().tool !== "select") return;
+                  ev.stopPropagation();
+                  if (!(selection?.type === "frame" && selection.id === frame.id)) return;
+                  const origin = { ...frame };
+                  grab(ev, map, onGesture, (dLat, dLng) => {
                     usePlantStore.getState().updateFrame(frame.id, {
-                      south: frame.south + dLat,
-                      north: frame.north + dLat,
-                      west: frame.west + dLng,
-                      east: frame.east + dLng,
+                      south: origin.south + dLat,
+                      north: origin.north + dLat,
+                      west: origin.west + dLng,
+                      east: origin.east + dLng,
                     });
-                  })
-                }
+                  });
+                }}
               />
             ));
           })
@@ -139,37 +149,28 @@ export function MapChrome({
   );
 }
 
-function beginAdjust(
+function grab(
   ev: ReactPointerEvent,
   map: L.Map,
   onGesture: (active: boolean) => void,
-  select: () => void,
   moveBy: (dLat: number, dLng: number) => void,
 ) {
-  if (usePlantStore.getState().tool !== "select") return;
   ev.stopPropagation();
   ev.preventDefault();
-  select();
+  onGesture(true);
+  map.dragging.disable();
+  usePlantStore.getState().checkpoint();
   const start = map.mouseEventToLatLng(ev.nativeEvent);
-  const origin = { x: ev.clientX, y: ev.clientY };
-  let dragging = false;
   const place = (e: PointerEvent) => {
-    if (!dragging) {
-      if (Math.hypot(e.clientX - origin.x, e.clientY - origin.y) < 5) return;
-      dragging = true;
-      onGesture(true);
-      map.dragging.disable();
-      usePlantStore.getState().checkpoint();
-    }
     const ll = map.mouseEventToLatLng(e);
     moveBy(ll.lat - start.lat, ll.lng - start.lng);
   };
-  const onUp = () => {
+  const onUp = (e: PointerEvent) => {
     window.removeEventListener("pointermove", place);
     window.removeEventListener("pointerup", onUp);
-    if (!dragging) return;
     if (usePlantStore.getState().tool !== "frame") map.dragging.enable();
     onGesture(false);
+    place(e);
   };
   window.addEventListener("pointermove", place);
   window.addEventListener("pointerup", onUp);
@@ -289,38 +290,39 @@ function Board({
         lineHeight: 1.35,
         cursor: selected ? "grab" : "pointer",
       }}
+      onClick={(ev) => {
+        ev.stopPropagation();
+        if (usePlantStore.getState().tool !== "select") return;
+        if (!board.opened) {
+          const view = usePlantStore.getState().view;
+          const world = 256 * 2 ** (Number.isFinite(view.zoom) ? view.zoom : 18);
+          const cos = Math.max(0.2, Math.abs(Math.cos((view.lat * Math.PI) / 180)));
+          const west = Math.min(board.west, board.east);
+          const south = Math.min(board.south, board.north);
+          usePlantStore.getState().updateBoard({
+            opened: true,
+            west,
+            south,
+            east: west + (210 / world) * 360,
+            north: south + (Math.max(56, notes.length * 22 + 12) / world) * 360 * cos,
+          });
+        }
+        usePlantStore.getState().select({ type: "board" });
+      }}
       onPointerDown={(ev) => {
+        if ((ev.target as HTMLElement).dataset.handle) return;
+        if (usePlantStore.getState().tool !== "select") return;
+        ev.stopPropagation();
+        if (!selected) return;
         const origin = { ...board };
-        beginAdjust(
-          ev,
-          map,
-          onGesture,
-          () => {
-            if (!board.opened) {
-              const view = usePlantStore.getState().view;
-              const world = 256 * 2 ** (Number.isFinite(view.zoom) ? view.zoom : 18);
-              const cos = Math.max(0.2, Math.abs(Math.cos((view.lat * Math.PI) / 180)));
-              const west = Math.min(board.west, board.east);
-              const south = Math.min(board.south, board.north);
-              usePlantStore.getState().updateBoard({
-                opened: true,
-                west,
-                south,
-                east: west + (210 / world) * 360,
-                north: south + (Math.max(56, notes.length * 22 + 12) / world) * 360 * cos,
-              });
-            }
-            usePlantStore.getState().select({ type: "board" });
-          },
-          (dLat, dLng) => {
-            usePlantStore.getState().updateBoard({
-              south: origin.south + dLat,
-              north: origin.north + dLat,
-              west: origin.west + dLng,
-              east: origin.east + dLng,
-            });
-          },
-        );
+        grab(ev, map, onGesture, (dLat, dLng) => {
+          usePlantStore.getState().updateBoard({
+            south: origin.south + dLat,
+            north: origin.north + dLat,
+            west: origin.west + dLng,
+            east: origin.east + dLng,
+          });
+        });
       }}
     >
       <div ref={body} className="pointer-events-none h-full overflow-hidden px-2 py-1" style={{ textShadow: "0 1px 2px #000" }}>
@@ -382,6 +384,7 @@ function FrameInset({
       zoomSnap: 0.1,
     });
     L.tileLayer(SAT, { maxZoom: 23, maxNativeZoom: 19, crossOrigin: "anonymous" }).addTo(inner);
+    inner.getContainer().style.pointerEvents = "none";
     inner.setView(center, zoom, { animate: false });
     L.DomEvent.disableScrollPropagation(el);
     inners.current.set(frame.id, inner);
@@ -606,23 +609,25 @@ function FrameInset({
       className="pointer-events-auto absolute overflow-hidden border-2 bg-black shadow-lg"
       data-frame-id={frame.id}
       style={{ left: box.left, top: box.top, width: box.width, height: box.height, cursor: selected ? "grab" : "pointer", borderColor: frame.linkColor || "#f5d90a", borderStyle: "dashed" }}
+      onClick={(ev) => {
+        ev.stopPropagation();
+        if (usePlantStore.getState().tool !== "select") return;
+        usePlantStore.getState().select({ type: "frame", id: frame.id });
+      }}
       onPointerDown={(ev) => {
         if ((ev.target as HTMLElement).dataset.handle) return;
+        if (usePlantStore.getState().tool !== "select") return;
+        ev.stopPropagation();
+        if (!selected) return;
         const origin = { ...frame };
-        beginAdjust(
-          ev,
-          map,
-          onGesture,
-          () => usePlantStore.getState().select({ type: "frame", id: frame.id }),
-          (dLat, dLng) => {
-            usePlantStore.getState().updateFrame(frame.id, {
-              viewSouth: origin.viewSouth + dLat,
-              viewNorth: origin.viewNorth + dLat,
-              viewWest: origin.viewWest + dLng,
-              viewEast: origin.viewEast + dLng,
-            });
-          },
-        );
+        grab(ev, map, onGesture, (dLat, dLng) => {
+          usePlantStore.getState().updateFrame(frame.id, {
+            viewSouth: origin.viewSouth + dLat,
+            viewNorth: origin.viewNorth + dLat,
+            viewWest: origin.viewWest + dLng,
+            viewEast: origin.viewEast + dLng,
+          });
+        });
       }}
       onWheel={(ev) => {
         ev.preventDefault();

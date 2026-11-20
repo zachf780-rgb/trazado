@@ -492,6 +492,8 @@ export function MapView({ basemap }: { basemap: "satellite" | "streets" }) {
       gestureUntil = Date.now() + ms;
     };
     const onClick = (e: L.LeafletMouseEvent) => {
+      const raw = e.originalEvent?.target;
+      if (raw instanceof Element && raw.closest("[data-board-shot], [data-frame-id], [data-frame-edge]")) return;
       if (Date.now() < gestureUntil) return;
       const s = usePlantStore.getState();
       const ll = { lat: e.latlng.lat, lng: e.latlng.lng };
