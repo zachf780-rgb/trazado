@@ -212,14 +212,21 @@ export function PlantApp() {
 			if (e.key === "Escape") {
 				if (s.snapAsk) s.dismissSnap();
 				else if (s.lineSnap) s.dismissLineSnap(true);
+				else if (s.draft && "path" in s.draft && s.draft.path.length > 0) s.undoDraftPoint();
 				else if (s.draft) s.cancelDraft();
 				else s.clearSelection();
 			}
-			if ((e.key === "Delete" || e.key === "Backspace") && s.selection) {
+			if ((e.key === "Delete" || e.key === "Backspace") && !s.selection && s.draft && "path" in s.draft) {
+				e.preventDefault();
+				s.undoDraftPoint();
+			} else if ((e.key === "Delete" || e.key === "Backspace") && s.selection) {
 				e.preventDefault();
 				s.deleteSelection();
 			}
-			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && !e.shiftKey && s.draft && "path" in s.draft && s.draft.path.length > 0) {
+				e.preventDefault();
+				s.undoDraftPoint();
+			} else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
 				e.preventDefault();
 				if (e.shiftKey) s.redo();
 				else s.undo();
@@ -812,19 +819,24 @@ export function PlantApp() {
 					}, size))]
 				}) : null,
 				showDraftBar ? /* @__PURE__ */ jsx("div", {
-					className: "pointer-events-none absolute inset-x-0 top-28 z-20 flex justify-center px-3 md:top-20",
+					className: "pointer-events-none absolute inset-x-0 bottom-[7.4rem] z-40 flex justify-center px-3 md:bottom-auto md:top-20",
 					children: /* @__PURE__ */ jsxs("div", {
-						className: "pointer-events-auto flex items-center gap-2 rounded-[var(--radius-md)] border border-border bg-elevated px-2 py-1.5 shadow-lg",
+						className: "pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-2 rounded-[var(--radius-md)] border border-border bg-elevated px-2 py-1.5 shadow-lg",
 						children: [drawingFeet != null ? /* @__PURE__ */ jsx("span", {
 							className: "px-1 font-mono text-sm font-semibold tabular-nums",
 							children: formatFeet(drawingFeet)
+						}) : null, draft && "path" in draft && draft.path.length > 0 ? /* @__PURE__ */ jsxs(Button, {
+							variant: "secondary",
+							className: "h-11 px-3",
+							onClick: () => usePlantStore.getState().undoDraftPoint(),
+							children: [/* @__PURE__ */ jsx(Undo2, { className: "size-4" }), " Undo"]
 						}) : null, canFinish ? /* @__PURE__ */ jsxs(Button, {
-							size: "sm",
+							className: "h-11 px-3",
 							onClick: () => usePlantStore.getState().finishDraft(),
 							children: [/* @__PURE__ */ jsx(Check, { className: "size-4" }), " Finish"]
 						}) : null, /* @__PURE__ */ jsxs(Button, {
 							variant: "ghost",
-							size: "sm",
+							className: "h-11 px-3",
 							onClick: () => usePlantStore.getState().cancelDraft(),
 							children: [/* @__PURE__ */ jsx(X, { className: "size-4" }), " Cancel"]
 						})]
@@ -892,6 +904,7 @@ export function PlantApp() {
 					]
 				}) : null,
 				legendOpen ? /* @__PURE__ */ jsxs("aside", {
+					"data-legend": "1",
 					className: "absolute right-2 bottom-[7.75rem] z-20 max-h-[calc(100dvh-16rem)] w-52 overflow-y-auto rounded-[var(--radius-md)] border border-border bg-elevated/95 px-2 py-1.5 md:right-4 md:bottom-4 md:max-h-[calc(100dvh-6rem)]",
 					children: [
 						totals.usedLines.length > 0 || totals.removeLines.length > 0 || totals.addPipe > 0 || totals.pullOccupied > 0 || totals.delash > 0 || totals.wreck > 0 ? /* @__PURE__ */ jsxs("ul", {

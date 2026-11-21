@@ -1,5 +1,5 @@
 import { jsPDF } from "jspdf";
-import { snapNode } from "./snap";
+import { snapNode, legendImage, pasteLegend } from "./snap";
 
 export type MapShot = {
   image: string;
@@ -136,7 +136,10 @@ function drawPage(pdf: jsPDF, image: HTMLImageElement, shot: MapShot, page: numb
 }
 
 export async function exportMapPdf(host: HTMLElement, shot: Omit<MapShot, "image">, filename: string) {
-  const image = await snapNode(host);
+  const raw = await snapNode(host);
+  const legend = document.querySelector("[data-legend]");
+  const legendUrl = legend instanceof HTMLElement ? await legendImage(legend) : "";
+  const image = legendUrl ? await pasteLegend(raw, legendUrl) : raw;
   const loaded = await loadImage(image);
   const full: MapShot = { ...shot, image };
   const pdf = new jsPDF({
@@ -151,9 +154,13 @@ export async function exportMapPdf(host: HTMLElement, shot: Omit<MapShot, "image
 
 export async function exportPdfPages(pages: MapShot[], filename: string) {
   if (pages.length === 0) return;
-  const images = await Promise.all(pages.map((page) => loadImage(page.image)));
-  const keyUrl = pages.length > 1 ? await keyImage(pages) : "";
-  const key = keyUrl ? await loadImage(keyUrl) : null;
+  const legendEl = document.querySelector("[data-legend]");
+  const legendUrl = legendEl instanceof HTMLElement ? await legendImage(legendEl) : "";
+  const stamped = legendUrl ? await Promise.all(pages.map(async (page) => ({ ...page, image: await pasteLegend(page.image, legendUrl) }))) : pages;
+  const images = await Promise.all(stamped.map((page) => loadImage(page.image)));
+  const keyUrl = stamped.length > 1 ? await keyImage(stamped) : "";
+  const keyMarked = keyUrl && legendUrl ? await pasteLegend(keyUrl, legendUrl) : keyUrl;
+  const key = keyMarked ? await loadImage(keyMarked) : null;
   const first = key ?? images[0]!;
   const pdf = new jsPDF({
     orientation: first.width >= first.height ? "landscape" : "portrait",
@@ -162,13 +169,13 @@ export async function exportPdfPages(pages: MapShot[], filename: string) {
     hotfixes: ["px_scaling"],
   });
   if (key) {
-    const rects = pages.map(shotRect);
+    const rects = stamped.map(shotRect);
     const lat = rects.reduce((sum, rect) => sum + (rect.north + rect.south) / 2, 0) / rects.length;
     const lng = rects.reduce((sum, rect) => sum + (rect.east + rect.west) / 2, 0) / rects.length;
-    pdf.addImage(keyUrl, "PNG", 0, 0, key.width, key.height);
+    pdf.addImage(keyMarked, "PNG", 0, 0, key.width, key.height);
     stamp(pdf, 1, lat, lng, "Key");
   }
-  pages.forEach((page, index) => {
+  stamped.forEach((page, index) => {
     const img = images[index]!;
     const number = key ? index + 2 : index + 1;
     if (key || index > 0) pdf.addPage([img.width, img.height], img.width >= img.height ? "landscape" : "portrait");

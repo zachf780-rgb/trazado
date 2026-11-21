@@ -148,4 +148,87 @@ export async function captureFrame(root: HTMLElement): Promise<string> {
   return canvas.toDataURL("image/png");
 }
 
-export { loadImage };
+function copyPaint(from: HTMLElement, to: HTMLElement) {
+  const sources = [from, ...from.querySelectorAll<HTMLElement>("*")];
+  const copies = [to, ...to.querySelectorAll<HTMLElement>("*")];
+  sources.forEach((src, index) => {
+    const dst = copies[index];
+    if (!dst) return;
+    const style = getComputedStyle(src);
+    dst.style.color = style.color;
+    dst.style.backgroundColor = style.backgroundColor;
+    dst.style.borderTopColor = style.borderTopColor;
+    dst.style.borderRightColor = style.borderRightColor;
+    dst.style.borderBottomColor = style.borderBottomColor;
+    dst.style.borderLeftColor = style.borderLeftColor;
+    dst.style.borderTopWidth = style.borderTopWidth;
+    dst.style.borderRightWidth = style.borderRightWidth;
+    dst.style.borderBottomWidth = style.borderBottomWidth;
+    dst.style.borderLeftWidth = style.borderLeftWidth;
+    dst.style.borderStyle = style.borderTopStyle;
+    dst.style.borderRadius = style.borderRadius;
+    dst.style.font = style.font;
+    dst.style.lineHeight = style.lineHeight;
+    dst.style.letterSpacing = style.letterSpacing;
+    dst.style.paddingTop = style.paddingTop;
+    dst.style.paddingRight = style.paddingRight;
+    dst.style.paddingBottom = style.paddingBottom;
+    dst.style.paddingLeft = style.paddingLeft;
+    dst.style.marginTop = style.marginTop;
+    dst.style.marginRight = style.marginRight;
+    dst.style.marginBottom = style.marginBottom;
+    dst.style.marginLeft = style.marginLeft;
+    dst.style.display = style.display;
+    dst.style.alignItems = style.alignItems;
+    dst.style.justifyContent = style.justifyContent;
+    dst.style.gap = style.gap;
+    dst.style.columnGap = style.columnGap;
+    dst.style.rowGap = style.rowGap;
+    dst.style.flex = style.flex;
+    dst.style.gridTemplateColumns = style.gridTemplateColumns;
+    dst.style.opacity = style.opacity;
+    dst.style.whiteSpace = style.whiteSpace;
+  });
+}
+
+/** The on-screen legend, painted with resolved colors so it can sit on a PDF page. */
+export async function legendImage(legend: HTMLElement): Promise<string> {
+  const clone = legend.cloneNode(true) as HTMLElement;
+  const width = Math.max(160, Math.round(legend.getBoundingClientRect().width));
+  const host = document.createElement("div");
+  host.style.cssText = `position:fixed;left:-12000px;top:0;width:${width}px;z-index:-1;`;
+  clone.style.position = "static";
+  clone.style.maxHeight = "none";
+  clone.style.height = "auto";
+  clone.style.overflow = "visible";
+  clone.style.width = `${width}px`;
+  host.appendChild(clone);
+  document.body.appendChild(host);
+  copyPaint(legend, clone);
+  try {
+    return await toPng(clone, { pixelRatio: 2, cacheBust: true, skipFonts: true });
+  } catch {
+    return "";
+  } finally {
+    host.remove();
+  }
+}
+
+export async function pasteLegend(pageUrl: string, legendUrl: string): Promise<string> {
+  if (!legendUrl) return pageUrl;
+  const [page, mark] = await Promise.all([loadImage(pageUrl), loadImage(legendUrl)]);
+  const canvas = document.createElement("canvas");
+  canvas.width = page.width;
+  canvas.height = page.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return pageUrl;
+  ctx.drawImage(page, 0, 0);
+  const margin = Math.round(Math.min(page.width, page.height) * 0.02);
+  const maxW = page.width * 0.46;
+  const maxH = page.height * 0.72;
+  const scale = Math.min(maxW / mark.width, maxH / mark.height, 1);
+  const w = mark.width * scale;
+  const h = mark.height * scale;
+  ctx.drawImage(mark, page.width - w - margin, page.height - h - margin, w, h);
+  return canvas.toDataURL("image/png");
+}

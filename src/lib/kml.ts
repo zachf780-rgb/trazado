@@ -1333,6 +1333,8 @@ function importedAnchors(kind: string, pm: Element): number[] {
   if (kind !== "pole") return [];
   const listed = dataValue(pm, "anchors")
     .split(/[\s,]+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
     .map((part) => Number(part))
     .filter((n) => Number.isFinite(n));
   const raw =

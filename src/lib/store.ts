@@ -105,6 +105,7 @@ interface PlantState extends PlantProject {
   startOverlay: (file: File) => Promise<void>;
   finishDraft: () => boolean;
   cancelDraft: () => void;
+  undoDraftPoint: () => void;
   moveLineVertex: (id: string, index: number, ll: LatLng) => void;
   movePoint: (id: string, ll: LatLng) => void;
   updateLine: (
@@ -1025,6 +1026,32 @@ export const usePlantStore = create<PlantState>()(
       },
 
       cancelDraft: () => set({ draft: null, pointer: null, snapAsk: null, lineSnap: null }),
+      undoDraftPoint: () => {
+        const s = get();
+        const draft = s.draft;
+        if (!draft || !("path" in draft)) return;
+        if (draft.path.length <= 1) {
+          set({ draft: null, pointer: null, snapAsk: null, lineSnap: null });
+          return;
+        }
+        const removed = draft.path[draft.path.length - 1];
+        const path = draft.path.slice(0, -1);
+        if (draft.mode === "polygon") {
+          set({ draft: { ...draft, path }, snapAsk: null, lineSnap: null });
+          return;
+        }
+        const near = (at: LatLng) => removed && haversineFeet(at, removed) < 2;
+        set({
+          draft: {
+            ...draft,
+            path,
+            snaps: draft.snaps.filter((snap) => !near(snap)),
+            pending: draft.pending.filter((join) => !near(join.at)),
+          },
+          snapAsk: null,
+          lineSnap: null,
+        });
+      },
 
       moveLineVertex: (id, index, ll) => {
         if (!isLatLng(ll)) return;
