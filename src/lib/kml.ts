@@ -41,7 +41,7 @@ import { footageSpans, formatFeet, haversineFeet, joinMask, parallelPath, offset
 import { blobToDataUrl, dataUrlToBytes, pedestalIconDataUrl, pointIconDataUrl, poleVariantDataUrl, stampRemoveSlashes, vaultIconDataUrl } from "./icons";
 
 function coord(ll: LatLng): string {
-  return `${ll.lng},${ll.lat},50`;
+  return `${ll.lng},${ll.lat}`;
 }
 
 function nudge(at: LatLng, side: string | undefined): LatLng {
@@ -621,7 +621,7 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
           <LabelStyle><scale>0</scale></LabelStyle>
         </Style>
         <Point>
-          <altitudeMode>relativeToGround</altitudeMode>
+          <altitudeMode>clampToGround</altitudeMode>
           <coordinates>${coord(at)}</coordinates>
         </Point>
       </Placemark>`;
@@ -630,7 +630,7 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
     return `      <Placemark>
         <name>__callout</name>
         <Style><LineStyle><color>${hexToKmlColor(hex)}</color><width>1</width></LineStyle></Style>
-        <LineString><altitudeMode>relativeToGround</altitudeMode>
+        <LineString><altitudeMode>clampToGround</altitudeMode>
           <tessellate>1</tessellate><coordinates>${coord(from)} ${coord(to)}</coordinates></LineString>
       </Placemark>`;
   }
@@ -807,14 +807,14 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
           : `      <Placemark>
         <name>__remove</name>
         <styleUrl>#remove-slash-edge</styleUrl>
-        <LineString><altitudeMode>relativeToGround</altitudeMode>
+        <LineString><altitudeMode>clampToGround</altitudeMode>
           <tessellate>1</tessellate><coordinates>${coords}</coordinates></LineString>
       </Placemark>
 `;
         return `${edge}      <Placemark>
         <name>__remove</name>
         <styleUrl>#${red ? "remove-slash" : "remove-slash-white"}</styleUrl>
-        <LineString><altitudeMode>relativeToGround</altitudeMode>
+        <LineString><altitudeMode>clampToGround</altitudeMode>
           <tessellate>1</tessellate><coordinates>${coords}</coordinates></LineString>
       </Placemark>`;
       })
@@ -825,7 +825,7 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
     return `      <Placemark>
         <name>__remove</name>
         <styleUrl>#remove-shade</styleUrl>
-        <LineString><altitudeMode>relativeToGround</altitudeMode>
+        <LineString><altitudeMode>clampToGround</altitudeMode>
           <tessellate>1</tessellate><coordinates>${coordList(path)}</coordinates></LineString>
       </Placemark>
 ${slashXml(slashMarks(path))}`;
@@ -905,7 +905,7 @@ ${slashXml(slashMarks(path))}`;
           </LineStyle>
         </Style>
         <LineString>
-          <altitudeMode>relativeToGround</altitudeMode>
+          <altitudeMode>clampToGround</altitudeMode>
           <tessellate>1</tessellate>
           <coordinates>${coordList(twin)}</coordinates>
         </LineString>
@@ -1001,7 +1001,7 @@ ${slashXml(slashMarks(path))}`;
           <LabelStyle><scale>0</scale></LabelStyle>
         </Style>
         <Point>
-          <altitudeMode>relativeToGround</altitudeMode>
+          <altitudeMode>clampToGround</altitudeMode>
           <coordinates>${coord(dot.at)}</coordinates>
         </Point>
       </Placemark>`;
@@ -1014,7 +1014,7 @@ ${slashXml(slashMarks(path))}`;
         ${meta ? `<ExtendedData>${meta}</ExtendedData>` : ""}
         ${lineStyle}
         <LineString>
-          <altitudeMode>relativeToGround</altitudeMode>
+          <altitudeMode>clampToGround</altitudeMode>
           <tessellate>1</tessellate>
           <coordinates>${coordList(line.path)}</coordinates>
         </LineString>
@@ -1103,7 +1103,7 @@ ${inner}
         ${kmlDescription(p.description)}
         <ExtendedData>${data}</ExtendedData>
         ${style}
-        <Point><altitudeMode>relativeToGround</altitudeMode><coordinates>${coord(p.position)}</coordinates></Point>
+        <Point><altitudeMode>clampToGround</altitudeMode><coordinates>${coord(p.position)}</coordinates></Point>
       </Placemark>
 ${showLabel ? textMark(visibleName, nudge(p.position, p.labelSide), "#f8fafc", nameSize === "xl" ? "xl" : nameSize === "lg" ? "lg" : nameSize === "sm" ? "sm" : "md", false, "#111113") : ""}`;
       })
@@ -1143,7 +1143,7 @@ ${project.polygons
           <LabelStyle><scale>0</scale></LabelStyle>
         </Style>
         <Polygon>
-          <altitudeMode>relativeToGround</altitudeMode>
+          <altitudeMode>clampToGround</altitudeMode>
           <tessellate>1</tessellate>
           <outerBoundaryIs>
             <LinearRing>
@@ -1171,8 +1171,8 @@ ${project.overlays
           .toString(16)
           .padStart(2, "0")}ffffff</color>
         <Icon><href>${escapeXml(overlayHrefs[ov.id] ?? "")}</href></Icon>
-        <altitude>50</altitude>
-      <altitudeMode>relativeToGround</altitudeMode>
+        <altitude>0</altitude>
+      <altitudeMode>clampToGround</altitudeMode>
       <LatLonBox>
           <north>${ov.north}</north>
           <south>${ov.south}</south>
@@ -1224,7 +1224,7 @@ ${(project.frames ?? [])
       (coordinates) => `      <Placemark>
         <name>Frame</name>
         <Style><LineStyle><color>${color}</color><width>2</width></LineStyle></Style>
-        <LineString><altitudeMode>relativeToGround</altitudeMode>
+        <LineString><altitudeMode>clampToGround</altitudeMode>
           <tessellate>1</tessellate><coordinates>${coordinates}</coordinates></LineString>
       </Placemark>`,
     );
@@ -1276,7 +1276,7 @@ ${ties
           <LineStyle><color>${color}</color><width>${lineWidth(tie.kind)}</width></LineStyle>
         </Style>
         <LineString>
-          <altitudeMode>relativeToGround</altitudeMode>
+          <altitudeMode>clampToGround</altitudeMode>
           <tessellate>1</tessellate>
           <coordinates>${coordList(tie.path)}</coordinates>
         </LineString>

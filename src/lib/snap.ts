@@ -214,7 +214,7 @@ export async function legendImage(legend: HTMLElement): Promise<string> {
   }
 }
 
-export async function pasteLegend(pageUrl: string, legendUrl: string): Promise<string> {
+export async function pasteLegend(pageUrl: string, legendUrl: string, forcedScale?: number): Promise<string> {
   if (!legendUrl) return pageUrl;
   const [page, mark] = await Promise.all([loadImage(pageUrl), loadImage(legendUrl)]);
   const canvas = document.createElement("canvas");
@@ -224,9 +224,8 @@ export async function pasteLegend(pageUrl: string, legendUrl: string): Promise<s
   if (!ctx) return pageUrl;
   ctx.drawImage(page, 0, 0);
   const margin = Math.round(Math.min(page.width, page.height) * 0.02);
-  const maxW = page.width * 0.46;
-  const maxH = page.height * 0.72;
-  const scale = Math.min(maxW / mark.width, maxH / mark.height, 1);
+  const fit = Math.min((page.width * 0.34) / mark.width, (page.height * 0.62) / mark.height, 1);
+  const scale = forcedScale ?? fit;
   const w = mark.width * scale;
   const h = mark.height * scale;
   ctx.drawImage(mark, page.width - w - margin, page.height - h - margin, w, h);

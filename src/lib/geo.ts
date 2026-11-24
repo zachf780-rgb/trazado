@@ -1137,8 +1137,8 @@ function clipSquare(drawn: LatLng[], gear: LatLng, size: number): { parts: LatLn
 export function squareLine2(
   lines: { id: string; kind: LineKind; path: LatLng[]; offsetFt: number; drawn: LatLng[] }[],
   gears: LatLng[],
-): { path: LatLng[]; kind: LineKind }[] {
-  const figures: { path: LatLng[]; kind: LineKind }[] = [];
+): { path: LatLng[]; kind: LineKind; id: string }[] {
+  const figures: { path: LatLng[]; kind: LineKind; id: string }[] = [];
   const cuts = new Map<string, { gear: LatLng; at: LatLng; id: string; kind: LineKind }[]>();
   for (const line of lines) {
     let pieces = [line.drawn];
@@ -1170,7 +1170,7 @@ export function squareLine2(
       pieces = next;
     }
     for (const path of pieces) {
-      if (path.length >= 2) figures.push({ path, kind: line.kind });
+      if (path.length >= 2) figures.push({ path, kind: line.kind, id: line.id });
     }
   }
   for (const group of cuts.values()) {
@@ -1209,7 +1209,7 @@ export function squareLine2(
       const ccwHits = walkHits(ccw, centers);
       const path =
         cwHits === ccwHits ? (cw.length <= ccw.length ? cw : ccw) : cwHits < ccwHits ? cw : ccw;
-      figures.push({ path, kind: a.kind });
+      figures.push({ path, kind: a.kind, id: a.id });
     };
     for (const indexes of byLine.values()) {
       if (indexes.length < 2) continue;

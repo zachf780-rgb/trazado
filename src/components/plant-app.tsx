@@ -150,6 +150,41 @@ function isTypingTarget(el) {
 	return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
 }
 var fieldClass = "flex w-full rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 text-sm text-foreground shadow-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+function hideNotesOffMap(host: HTMLElement) {
+	const map = (host as HTMLElement & { _trazadoMap?: { getBounds: () => { getNorth: () => number; getSouth: () => number; getEast: () => number; getWest: () => number } } })._trazadoMap;
+	const board = host.querySelector("[data-board-shot]");
+	if (!map || !(board instanceof HTMLElement)) return [] as HTMLElement[];
+	const bounds = map.getBounds();
+	const inside = (ll: { lat: number; lng: number } | null | undefined) =>
+		Boolean(ll) && ll.lat <= bounds.getNorth() && ll.lat >= bounds.getSouth() && ll.lng <= bounds.getEast() && ll.lng >= bounds.getWest();
+	const keep = new Set<number>();
+	for (const note of usePlantStore.getState().notes) {
+		if (inside(note.at) || inside(note.anchor)) keep.add(note.n);
+	}
+	const hidden: HTMLElement[] = [];
+	let shown = 0;
+	for (const row of board.querySelectorAll("p")) {
+		const n = Number(row.querySelector("span")?.textContent);
+		if (!keep.has(n)) {
+			hidden.push(row);
+			row.style.display = "none";
+		} else shown += 1;
+	}
+	if (shown === 0) {
+		hidden.push(board);
+		board.dataset.snapDisplay = board.style.display;
+		board.style.display = "none";
+	}
+	return hidden;
+}
+function restoreHidden(hidden: HTMLElement[]) {
+	for (const el of hidden) {
+		if (el.dataset.boardShot !== undefined || el.hasAttribute("data-board-shot")) {
+			el.style.display = el.dataset.snapDisplay ?? "";
+			delete el.dataset.snapDisplay;
+		} else el.style.display = "";
+	}
+}
 export function PlantApp() {
 	const [mounted, setMounted] = useState(false);
 	const [MapCmp, setMapCmp] = useState(null);
@@ -382,12 +417,15 @@ export function PlantApp() {
 	async function takeSnapshot() {
 		const host = document.querySelector("[data-map]");
 		if (!(host instanceof HTMLElement)) return;
+		const hidden = hideNotesOffMap(host);
 		try {
 			const { snapNode } = await import("@/lib/snap");
 			const image = await snapNode(host);
 			setShots((list) => [...list, { image, ...mapShot(host) }]);
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : "Snapshot failed");
+		} finally {
+			restoreHidden(hidden);
 		}
 	}
 	async function downloadSnapshots() {

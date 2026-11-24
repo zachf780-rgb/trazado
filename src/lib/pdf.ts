@@ -25,13 +25,21 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 }
 
 function stamp(pdf: jsPDF, page: number, lat: number, lng: number, title = "") {
+  const pageW = pdf.internal.pageSize.getWidth();
+  const size = Math.max(36, Math.round(pageW * 0.03));
   const label = title ? `${title}   ${lat.toFixed(6)}, ${lng.toFixed(6)}` : `${lat.toFixed(6)}, ${lng.toFixed(6)}   p.${page}`;
+  const pad = Math.round(size * 0.55);
+  const height = Math.round(size * 1.7);
+  const width = Math.max(Math.round(size * 10), Math.round(label.length * size * 0.62));
   pdf.setFillColor(17, 17, 19);
-  pdf.rect(10, 10, Math.max(210, label.length * 7.2), 26, "F");
+  pdf.rect(pad, pad, width, height, "F");
+  pdf.setDrawColor(245, 217, 10);
+  pdf.setLineWidth(Math.max(2, size * 0.06));
+  pdf.rect(pad, pad, width, height, "S");
   pdf.setTextColor(248, 250, 252);
   pdf.setFont("courier", "bold");
-  pdf.setFontSize(13);
-  pdf.text(label, 18, 28);
+  pdf.setFontSize(size);
+  pdf.text(label, pad + Math.round(size * 0.4), pad + Math.round(size * 1.15));
 }
 
 function worldAt(lat: number, lng: number, zoom: number) {
@@ -156,10 +164,21 @@ export async function exportPdfPages(pages: MapShot[], filename: string) {
   if (pages.length === 0) return;
   const legendEl = document.querySelector("[data-legend]");
   const legendUrl = legendEl instanceof HTMLElement ? await legendImage(legendEl) : "";
-  const stamped = legendUrl ? await Promise.all(pages.map(async (page) => ({ ...page, image: await pasteLegend(page.image, legendUrl) }))) : pages;
+  const legendMark = legendUrl ? await loadImage(legendUrl) : null;
+  const sample = legendMark ? await loadImage(pages[0]!.image) : null;
+  const snapshotScale =
+    legendMark && sample
+      ? Math.min((sample.width * 0.34) / legendMark.width, (sample.height * 0.62) / legendMark.height, 1)
+      : 1;
+  const stamped = legendUrl
+    ? await Promise.all(pages.map(async (page) => ({ ...page, image: await pasteLegend(page.image, legendUrl, snapshotScale) })))
+    : pages;
   const images = await Promise.all(stamped.map((page) => loadImage(page.image)));
   const keyUrl = stamped.length > 1 ? await keyImage(stamped) : "";
-  const keyMarked = keyUrl && legendUrl ? await pasteLegend(keyUrl, legendUrl) : keyUrl;
+  const keyPlain = keyUrl ? await loadImage(keyUrl) : null;
+  const keyScale =
+    legendMark && sample && keyPlain ? Math.min(snapshotScale, (keyPlain.width / sample.width) * snapshotScale) : snapshotScale;
+  const keyMarked = keyUrl && legendUrl ? await pasteLegend(keyUrl, legendUrl, keyScale) : keyUrl;
   const key = keyMarked ? await loadImage(keyMarked) : null;
   const first = key ?? images[0]!;
   const pdf = new jsPDF({

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type MutableRefObject, type PointerEvent a
 import L from "leaflet";
 import { usePlantStore } from "@/lib/store";
 import type { FrameFeature, LatLng, NoteBoard } from "@/lib/types";
-import { calloutAt, calloutFeet, footageSpans, haversineFeet, joinMask, objectSpans, offsetBeside, parallelOffsetFt, parallelPath, pathFootage, pathFrame, pathMidpoint, readableRotation, reportedFeet, slotCableTag, spanCalloutDir, spanCalloutStep, spanParts, spanShownFeet, squareLine2 } from "@/lib/geo";
+import { calloutAt, calloutFeet, footageSpans, haversineFeet, joinMask, objectSpans, offsetBeside, parallelOffsetFt, parallelPath, pathFootage, pathFrame, pathMidpoint, pointSlashMarks, readableRotation, reportedFeet, slashMarks, slotCableTag, spanCalloutDir, spanCalloutStep, spanParts, spanShownFeet, squareLine2 } from "@/lib/geo";
 import { isSnapTarget, joinsAtEnds, linePaint, linePreset, lineWeightOf, lineWidth, pointLabelColor, tintHex } from "@/lib/presets";
 import { pedestalIconDataUrl, pointIconDataUrl } from "@/lib/icons";
 import { escapeHtml } from "@/lib/utils";
@@ -12,6 +12,26 @@ const SAT =
 
 function frameZoom(mapZoom: number, closer: number) {
   return Math.min(22, mapZoom + Math.log2(1 + Math.max(0, closer)));
+}
+
+function paintSlashes(group: L.LayerGroup, path: LatLng[]) {
+  for (const [index, [a, b]] of slashMarks(path).entries()) {
+    const latlngs: [number, number][] = [
+      [a.lat, a.lng],
+      [b.lat, b.lng],
+    ];
+    const red = index % 2 === 0;
+    if (!red) {
+      L.polyline(latlngs, { color: "#111113", weight: 4.5, opacity: 0.9, lineCap: "butt", interactive: false }).addTo(group);
+    }
+    L.polyline(latlngs, {
+      color: red ? "#dc2626" : "#ffffff",
+      weight: red ? 3 : 2.5,
+      opacity: 1,
+      lineCap: "butt",
+      interactive: false,
+    }).addTo(group);
+  }
 }
 
 function projectBox(map: L.Map, box: { south: number; west: number; north: number; east: number }) {
@@ -423,6 +443,7 @@ function FrameInset({
       const color = linePaint(line);
       const weight = lineWeightOf(line);
       L.polyline(line.path.map((p) => [p.lat, p.lng] as [number, number]), { color, weight, interactive: false }).addTo(group);
+      if (line.remove) paintSlashes(group, line.path);
     }
     for (const point of points) {
       const iconUrl = point.kind === "pedestal" && point.pedType ? pedestalIconDataUrl(point.pedType, point.pedRotate) : pointIconDataUrl(point.kind);
@@ -441,6 +462,17 @@ function FrameInset({
           opacity: 1,
           className: `object-label size-${point.labelSize || "lg"}`,
         });
+      }
+      if (point.remove) {
+        for (const [a, b] of pointSlashMarks(point.position)) {
+          L.polyline(
+            [
+              [a.lat, a.lng],
+              [b.lat, b.lng],
+            ],
+            { color: "#dc2626", weight: 2, opacity: 1, lineCap: "butt", interactive: false },
+          ).addTo(group);
+        }
       }
     }
     const gear = points.filter((point) => isSnapTarget(point.kind)).map((point) => point.position);
@@ -465,6 +497,7 @@ function FrameInset({
         weight: lineWeightOf(line),
         interactive: false,
       }).addTo(group);
+      if (line.remove) paintSlashes(group, drawn);
     }
     for (const figure of squareLine2(open, gear)) {
       if (figure.path.length < 2) continue;
@@ -473,6 +506,8 @@ function FrameInset({
         weight: lineWidth(figure.kind),
         interactive: false,
       }).addTo(group);
+      const source = lines.find((line) => line.id === figure.id);
+      if (source?.remove) paintSlashes(group, figure.path);
     }
     const seenDots = new Set<string>();
     for (const line of lines) {
