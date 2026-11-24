@@ -378,7 +378,7 @@ export function PlantApp() {
 	const selectedFrame = selection?.type === "frame" ? frames.find((frame) => frame.id === selection.id) : null;
 	const selectedCallout = selection?.type === "callout" ? lines.find((line) => line.id === selection.id) : null;
 	const selectedBoard = selection?.type === "board" ? board : null;
-	const legendOpen = totals.usedLines.length > 0 || totals.removeLines.length > 0 || totals.usedPoints.length > 0 || totals.peds.length > 0 || totals.vaults.length > 0 || totals.lash > 0 || totals.strand > 0 || totals.delash > 0 || totals.wreck > 0;
+	const legendOpen = totals.usedLines.length > 0 || totals.removeLines.length > 0 || totals.usedPoints.length > 0 || totals.peds.length > 0 || totals.vaults.length > 0 || totals.lash > 0 || totals.strand > 0 || totals.cables.length > 0 || totals.delash > 0 || totals.wreck > 0;
 	const canFinish = draft?.mode === "line" && draft.path.length >= 2 || draft?.mode === "polygon" && draft.path.length >= 3;
 	const showDraftBar = Boolean(draft);
 	const drawingFeet = useMemo(() => {
@@ -1220,7 +1220,7 @@ export function PlantApp() {
 										style: { background: "#cbd5e1" }
 									}), /* @__PURE__ */ jsx("span", {
 										className: "truncate",
-										children: "Strand"
+										children: "place strand"
 									})]
 								}), /* @__PURE__ */ jsx("span", {
 									className: "font-mono text-xs tabular-nums text-muted-foreground",
@@ -1599,8 +1599,12 @@ function AdvancedMenu({ tool, onTool, onOverlay, compact }) {
 	})] });
 }
 function setLineSlot(line, slot, id) {
-	const slot1 = slot === 1 ? line.slot1 === id ? "" : id : line.slot1;
-	const slot2 = slot === 2 ? line.slot2 === id ? "" : id : line.slot2;
+	let slot1 = slot === 1 ? line.slot1 === id ? "" : id : line.slot1;
+	let slot2 = slot === 2 ? line.slot2 === id ? "" : id : line.slot2;
+	if (id === "strand" && slot1 === "strand" && slot2 === "strand") {
+		if (slot === 1) slot2 = "";
+		else slot1 = "";
+	}
 	usePlantStore.getState().updateLine(line.id, {
 		slot1,
 		slot2,
@@ -2214,7 +2218,9 @@ function Inspector({ line, point, polygon, overlay, note, frame, board, callout 
 											? count >= cap ? [] : Array.from({ length: count + 1 }, () => choice.id)
 											: [choice.id]
 										: cableChoices(line.kind).flatMap((item) => {
-											const n = item.id === choice.id ? (count >= cap ? 0 : count + 1) : line.cables.filter((id) => id === item.id).length;
+											const n = item.id === "strand"
+												? item.id === choice.id ? (count > 0 ? 0 : 1) : line.cables.includes("strand") ? 1 : 0
+												: item.id === choice.id ? (count >= cap ? 0 : count + 1) : line.cables.filter((id) => id === item.id).length;
 											return Array.from({ length: n }, () => item.id);
 										});
 									const kept = new Map<string, ("ug" | "width" | "share")[]>();

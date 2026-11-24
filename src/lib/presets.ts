@@ -424,6 +424,7 @@ export function plantTotals(
   let delash = 0;
   let lash = 0;
   let strand = 0;
+  let strandCable = 0;
   let wreck = 0;
   const ug = { "625": 0, "875": 0 };
   const ae = { "625": 0, "875": 0 };
@@ -460,8 +461,10 @@ export function plantTotals(
         if (ops.has("ol")) footage["aerial-overlash"] += spanFeet;
         const marked = (line.cableWork ?? []).some((work) => work?.op === "de" && work?.wreck === true) || pairs.some((pair) => pair.entry.cable !== "strand" && pair.work.op === "de" && pair.work.wreck === true);
         if (marked) wreck += spanFeet;
-        const strandCopies = entries.filter((entry) => entry.cable === "strand").length;
-        if (strandCopies > 0) strand += spanFeet * strandCopies;
+        if (entries.some((entry) => entry.cable === "strand")) {
+          strand += spanFeet;
+          strandCable += spanFeet;
+        }
         if (!line.hideCable) {
           for (const pair of pairs) {
             if (pair.entry.cable === "strand") continue;
@@ -472,7 +475,7 @@ export function plantTotals(
         }
       } else {
         footage["aerial-new"] += spanFeet;
-        strand += spanFeet;
+        strandCable += spanFeet;
         const bundle = entries.length >= 2 && entries.some((entry) => entry.cable === "fiber") && entries.some((entry) => entry.cable !== "fiber" && entry.cable !== "strand");
         if (bundle) footage["aerial-overlash"] += spanFeet;
         if (!line.hideCable) {
@@ -577,6 +580,7 @@ export function plantTotals(
     ...coaxRows("AE", ae),
     ...coaxRows("", other),
     ...fiberRows,
+    ...(strandCable > 0 ? [{ id: "strand", label: "Strand", feet: strandCable }] : []),
     ...dropRows,
   ];
   return { footage, removeFootage, counts, usedLines, removeLines, usedPoints, grand, addPipe, pullOccupied, delash, lash, strand, wreck, cables, risers, anchors, peds, vaults };

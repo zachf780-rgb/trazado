@@ -163,7 +163,7 @@ function countedCables(value: unknown, legacy: unknown, allowed: Set<string>, ca
   const counts = new Map<CableType, number>();
   for (const id of raw) {
     if (!isCable(id) || (allowed.size > 0 && !allowed.has(id))) continue;
-    counts.set(id, Math.min(cap, (counts.get(id) ?? 0) + 1));
+    counts.set(id, Math.min(id === "strand" ? 1 : cap, (counts.get(id) ?? 0) + 1));
   }
   return CABLE_IDS.filter((id) => counts.has(id)).flatMap((id) => Array.from({ length: counts.get(id) ?? 0 }, () => id));
 }
@@ -194,6 +194,7 @@ function cableFields(line: Partial<LineFeature> & { cable?: unknown }): Pick<
   }
   if (slot1 !== "" && slot1 !== "empty" && line.kind && !allowed.has(slot1)) slot1 = "";
   if (slot2 !== "" && slot2 !== "empty" && line.kind && !allowed.has(slot2)) slot2 = "";
+  if (slot1 === "strand" && slot2 === "strand") slot2 = "";
   return {
     slot1: parallel ? slot1 : "",
     slot2: parallel ? slot2 : "",

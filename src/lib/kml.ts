@@ -298,7 +298,7 @@ function legendPng(lines: LineFeature[], points: PointFeature[]): string {
     ctx.fillRect(pad, y - 7, 16, 4);
     ctx.fillStyle = "#e8eaee";
     ctx.textAlign = "left";
-    ctx.fillText("Strand", pad + 22, y);
+    ctx.fillText("place strand", pad + 22, y);
     ctx.textAlign = "right";
     ctx.fillStyle = "#c8ccd4";
     ctx.fillText(formatFeet(strand), w - pad, y);
@@ -774,7 +774,7 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
       : []),
     ...(strand > 0
       ? [
-          `<tr><td><font color="#cbd5e1">Strand</font></td><td align="right">${escapeXml(formatFeet(strand))}</td></tr>`,
+          `<tr><td><font color="#cbd5e1">place strand</font></td><td align="right">${escapeXml(formatFeet(strand))}</td></tr>`,
         ]
       : []),
     ...(delash > 0

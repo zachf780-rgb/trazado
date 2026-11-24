@@ -1492,18 +1492,23 @@ function joinCableWords(tags: string[]): string {
   return tags.join(" + ");
 }
 
-function workLabel(ops: { op: "de" | "re" | "ol"; tag?: string }[]): string {
+function workParts(ops: { op: "de" | "re" | "ol"; tag?: string }[]): { de: string; rest: string } {
   const groups: Record<"de" | "re" | "ol", string[]> = { de: [], re: [], ol: [] };
   for (const item of ops) groups[item.op].push(item.tag ?? "");
   const hasDe = groups.de.length > 0;
-  const parts: string[] = [];
-  if (hasDe) parts.push(groups.de.some(Boolean) ? `De ${joinCableWords(groups.de.filter(Boolean))}` : "De");
+  const de = hasDe ? (groups.de.some(Boolean) ? `De ${joinCableWords(groups.de.filter(Boolean))}` : "De") : "";
+  const rest: string[] = [];
   if (groups.re.length > 0) {
     const word = hasDe ? "Re" : "Lash";
-    parts.push(groups.re.some(Boolean) ? `${word} ${joinCableWords(groups.re.filter(Boolean))}` : word);
+    rest.push(groups.re.some(Boolean) ? `${word} ${joinCableWords(groups.re.filter(Boolean))}` : word);
   }
-  if (groups.ol.length > 0) parts.push(groups.ol.some(Boolean) ? `OL ${joinCableWords(groups.ol.filter(Boolean))}` : "OL");
-  return parts.join("/");
+  if (groups.ol.length > 0) rest.push(groups.ol.some(Boolean) ? `OL ${joinCableWords(groups.ol.filter(Boolean))}` : "OL");
+  return { de, rest: rest.join("/") };
+}
+
+function workLabel(ops: { op: "de" | "re" | "ol"; tag?: string }[]): string {
+  const parts = workParts(ops);
+  return [parts.de, parts.rest].filter(Boolean).join("/");
 }
 
 function aerialDetail(
@@ -1511,8 +1516,7 @@ function aerialDetail(
 ): string {
   const entries = cableEntries(line);
   if (line.aerialMode === "work") {
-    const strands = entries.filter((entry) => entry.cable === "strand").length;
-    const strandLabel = strands > 1 ? `strand x${strands}` : strands === 1 ? "strand" : "";
+    const strandLabel = entries.some((entry) => entry.cable === "strand") ? "new strand" : "";
     if (entries.length === 0) {
       const picked = (line.workOps ?? []).filter(isAerialOp);
       return workLabel(picked.map((op) => ({ op })));
@@ -1534,7 +1538,8 @@ function aerialDetail(
           if (!isAerialOp(op)) return [];
           return [{ op, tag: cableTag(entry.cable, entry.count) }];
         });
-    return [workLabel(rows), strandLabel].filter(Boolean).join("/");
+    const parts = workParts(rows);
+    return [parts.de, strandLabel, parts.rest].filter(Boolean).join("/");
   }
   if (line.strandOnly && entries.length === 0) return "strand only";
   const bundle = entries.length >= 2 && entries.some((entry) => entry.cable === "fiber") && entries.some((entry) => entry.cable !== "fiber");
