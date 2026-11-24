@@ -1,5 +1,5 @@
 import { jsPDF } from "jspdf";
-import { snapNode, legendImage, pasteLegend, pasteNoteList } from "./snap";
+import { snapNode, legendImage, pasteNoteList } from "./snap";
 
 export type MapShot = {
   image: string;
@@ -141,27 +141,51 @@ async function keyImage(pages: MapShot[]) {
   return canvas.toDataURL("image/png");
 }
 
-function drawPage(pdf: jsPDF, image: HTMLImageElement, shot: MapShot, page: number, title = "") {
+function legendFit(pageW: number, legend: HTMLImageElement) {
+  const pad = Math.round(pageW * 0.012);
+  const maxH = Math.round(pageW * 0.12);
+  const maxW = pageW - pad * 2;
+  const scale = Math.min(maxW / legend.width, maxH / legend.height);
+  return { pad, w: legend.width * scale, h: legend.height * scale, foot: Math.round(legend.height * scale + pad * 2) };
+}
+
+function pageSize(image: { width: number; height: number }, legend: HTMLImageElement | null) {
   const head = headerHeight(image.width);
+  const foot = legend ? legendFit(image.width, legend).foot : 0;
+  return { head, foot, width: image.width, height: image.height + head + foot };
+}
+
+function drawPage(pdf: jsPDF, image: HTMLImageElement, shot: MapShot, page: number, legend: HTMLImageElement | null, title = "") {
+  const head = headerHeight(image.width);
+  const fit = legend ? legendFit(image.width, legend) : null;
   pdf.addImage(shot.image, "PNG", 0, head, image.width, image.height);
+  if (fit && legend) {
+    const y = head + image.height;
+    pdf.setFillColor(255, 255, 255);
+    pdf.rect(0, y, image.width, fit.foot, "F");
+    pdf.setDrawColor(210, 210, 214);
+    pdf.setLineWidth(1);
+    pdf.line(0, y, image.width, y);
+    pdf.addImage(legend, "PNG", (image.width - fit.w) / 2, y + fit.pad, fit.w, fit.h);
+  }
   stamp(pdf, page, shot.lat, shot.lng, title, head);
 }
 
 export async function exportMapPdf(host: HTMLElement, shot: Omit<MapShot, "image">, filename: string) {
   const raw = await snapNode(host);
-  const legend = document.querySelector("[data-legend]");
-  const legendUrl = legend instanceof HTMLElement ? await legendImage(legend) : "";
-  const image = legendUrl ? await pasteLegend(raw, legendUrl) : raw;
-  const loaded = await loadImage(image);
-  const head = headerHeight(loaded.width);
-  const full: MapShot = { ...shot, image };
+  const legendEl = document.querySelector("[data-legend]");
+  const legendUrl = legendEl instanceof HTMLElement ? await legendImage(legendEl) : "";
+  const legend = legendUrl ? await loadImage(legendUrl) : null;
+  const loaded = await loadImage(raw);
+  const size = pageSize(loaded, legend);
+  const full: MapShot = { ...shot, image: raw };
   const pdf = new jsPDF({
     orientation: loaded.width >= loaded.height ? "landscape" : "portrait",
     unit: "px",
-    format: [loaded.width, loaded.height + head],
+    format: [size.width, size.height],
     hotfixes: ["px_scaling"],
   });
-  drawPage(pdf, loaded, full, 1);
+  drawPage(pdf, loaded, full, 1, legend);
   pdf.save(filename);
 }
 
@@ -169,50 +193,37 @@ export async function exportPdfPages(pages: MapShot[], filename: string) {
   if (pages.length === 0) return;
   const legendEl = document.querySelector("[data-legend]");
   const legendUrl = legendEl instanceof HTMLElement ? await legendImage(legendEl) : "";
-  const legendMark = legendUrl ? await loadImage(legendUrl) : null;
-  const sample = legendMark ? await loadImage(pages[0]!.image) : null;
-  const snapshotScale =
-    legendMark && sample
-      ? Math.min((sample.width * 0.34) / legendMark.width, (sample.height * 0.62) / legendMark.height, 1)
-      : 1;
+  const legend = legendUrl ? await loadImage(legendUrl) : null;
   const stamped = await Promise.all(
     pages.map(async (page) => {
-      const withLegend = legendUrl ? await pasteLegend(page.image, legendUrl, snapshotScale) : page.image;
-      const image =
-        page.refs && page.refs.length > 0
-          ? await pasteNoteList(withLegend, page.refs, page.blocks ?? [], legendMark ? { w: legendMark.width * snapshotScale, h: legendMark.height * snapshotScale } : null)
-          : withLegend;
+      const image = page.refs && page.refs.length > 0 ? await pasteNoteList(page.image, page.refs, page.blocks ?? [], null) : page.image;
       return { ...page, image };
     }),
   );
   const images = await Promise.all(stamped.map((page) => loadImage(page.image)));
   const keyUrl = stamped.length > 1 ? await keyImage(stamped) : "";
-  const keyPlain = keyUrl ? await loadImage(keyUrl) : null;
-  const keyScale =
-    legendMark && sample && keyPlain ? Math.min(snapshotScale, (keyPlain.width / sample.width) * snapshotScale) : snapshotScale;
-  const keyMarked = keyUrl && legendUrl ? await pasteLegend(keyUrl, legendUrl, keyScale) : keyUrl;
-  const key = keyMarked ? await loadImage(keyMarked) : null;
+  const key = keyUrl ? await loadImage(keyUrl) : null;
   const first = key ?? images[0]!;
-  const firstHead = headerHeight(first.width);
+  const firstSize = pageSize(first, legend);
   const pdf = new jsPDF({
     orientation: first.width >= first.height ? "landscape" : "portrait",
     unit: "px",
-    format: [first.width, first.height + firstHead],
+    format: [firstSize.width, firstSize.height],
     hotfixes: ["px_scaling"],
   });
   if (key) {
     const rects = stamped.map(shotRect);
     const lat = rects.reduce((sum, rect) => sum + (rect.north + rect.south) / 2, 0) / rects.length;
     const lng = rects.reduce((sum, rect) => sum + (rect.east + rect.west) / 2, 0) / rects.length;
-    pdf.addImage(keyMarked, "PNG", 0, firstHead, key.width, key.height);
-    stamp(pdf, 1, lat, lng, "Key", firstHead);
+    const shot = { image: keyUrl, lat, lng, zoom: 0, width: key.width, height: key.height };
+    drawPage(pdf, key, shot, 1, legend, "Key");
   }
   stamped.forEach((page, index) => {
     const img = images[index]!;
     const number = key ? index + 2 : index + 1;
-    const head = headerHeight(img.width);
-    if (key || index > 0) pdf.addPage([img.width, img.height + head], img.width >= img.height ? "landscape" : "portrait");
-    drawPage(pdf, img, page, number);
+    const size = pageSize(img, legend);
+    if (key || index > 0) pdf.addPage([size.width, size.height], img.width >= img.height ? "landscape" : "portrait");
+    drawPage(pdf, img, page, number, legend);
   });
   pdf.save(filename);
 }
