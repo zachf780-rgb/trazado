@@ -26,22 +26,23 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-function stamp(pdf: jsPDF, page: number, lat: number, lng: number, title = "") {
+function headerHeight(pageW: number) {
+  return Math.round(Math.max(14, pageW * 0.015) * 2.4);
+}
+
+function stamp(pdf: jsPDF, page: number, lat: number, lng: number, title: string, head: number) {
   const pageW = pdf.internal.pageSize.getWidth();
   const size = Math.max(14, Math.round(pageW * 0.015));
   const label = title ? `${title}   ${lat.toFixed(6)}, ${lng.toFixed(6)}` : `${lat.toFixed(6)}, ${lng.toFixed(6)}   p.${page}`;
+  pdf.setFillColor(255, 255, 255);
+  pdf.rect(0, 0, pageW, head, "F");
+  pdf.setDrawColor(210, 210, 214);
+  pdf.setLineWidth(1);
+  pdf.line(0, head, pageW, head);
+  pdf.setTextColor(17, 17, 19);
   pdf.setFont("courier", "bold");
   pdf.setFontSize(size);
-  const pad = Math.round(size * 0.4);
-  const height = Math.round(size * 1.45);
-  const width = pdf.getTextWidth(label) + pad * 2;
-  pdf.setFillColor(17, 17, 19);
-  pdf.rect(pad, pad, width, height, "F");
-  pdf.setDrawColor(245, 217, 10);
-  pdf.setLineWidth(Math.max(1, size * 0.05));
-  pdf.rect(pad, pad, width, height, "S");
-  pdf.setTextColor(248, 250, 252);
-  pdf.text(label, pad * 2, pad + Math.round(size * 1.05));
+  pdf.text(label, Math.round(size * 0.7), Math.round(head * 0.66));
 }
 
 function worldAt(lat: number, lng: number, zoom: number) {
@@ -140,9 +141,10 @@ async function keyImage(pages: MapShot[]) {
   return canvas.toDataURL("image/png");
 }
 
-function drawPage(pdf: jsPDF, image: HTMLImageElement, shot: MapShot, page: number) {
-  pdf.addImage(shot.image, "PNG", 0, 0, image.width, image.height);
-  stamp(pdf, page, shot.lat, shot.lng);
+function drawPage(pdf: jsPDF, image: HTMLImageElement, shot: MapShot, page: number, title = "") {
+  const head = headerHeight(image.width);
+  pdf.addImage(shot.image, "PNG", 0, head, image.width, image.height);
+  stamp(pdf, page, shot.lat, shot.lng, title, head);
 }
 
 export async function exportMapPdf(host: HTMLElement, shot: Omit<MapShot, "image">, filename: string) {
@@ -151,11 +153,12 @@ export async function exportMapPdf(host: HTMLElement, shot: Omit<MapShot, "image
   const legendUrl = legend instanceof HTMLElement ? await legendImage(legend) : "";
   const image = legendUrl ? await pasteLegend(raw, legendUrl) : raw;
   const loaded = await loadImage(image);
+  const head = headerHeight(loaded.width);
   const full: MapShot = { ...shot, image };
   const pdf = new jsPDF({
     orientation: loaded.width >= loaded.height ? "landscape" : "portrait",
     unit: "px",
-    format: [loaded.width, loaded.height],
+    format: [loaded.width, loaded.height + head],
     hotfixes: ["px_scaling"],
   });
   drawPage(pdf, loaded, full, 1);
@@ -190,23 +193,25 @@ export async function exportPdfPages(pages: MapShot[], filename: string) {
   const keyMarked = keyUrl && legendUrl ? await pasteLegend(keyUrl, legendUrl, keyScale) : keyUrl;
   const key = keyMarked ? await loadImage(keyMarked) : null;
   const first = key ?? images[0]!;
+  const firstHead = headerHeight(first.width);
   const pdf = new jsPDF({
     orientation: first.width >= first.height ? "landscape" : "portrait",
     unit: "px",
-    format: [first.width, first.height],
+    format: [first.width, first.height + firstHead],
     hotfixes: ["px_scaling"],
   });
   if (key) {
     const rects = stamped.map(shotRect);
     const lat = rects.reduce((sum, rect) => sum + (rect.north + rect.south) / 2, 0) / rects.length;
     const lng = rects.reduce((sum, rect) => sum + (rect.east + rect.west) / 2, 0) / rects.length;
-    pdf.addImage(keyMarked, "PNG", 0, 0, key.width, key.height);
-    stamp(pdf, 1, lat, lng, "Key");
+    pdf.addImage(keyMarked, "PNG", 0, firstHead, key.width, key.height);
+    stamp(pdf, 1, lat, lng, "Key", firstHead);
   }
   stamped.forEach((page, index) => {
     const img = images[index]!;
     const number = key ? index + 2 : index + 1;
-    if (key || index > 0) pdf.addPage([img.width, img.height], img.width >= img.height ? "landscape" : "portrait");
+    const head = headerHeight(img.width);
+    if (key || index > 0) pdf.addPage([img.width, img.height + head], img.width >= img.height ? "landscape" : "portrait");
     drawPage(pdf, img, page, number);
   });
   pdf.save(filename);

@@ -209,17 +209,17 @@
   height: 22px;
   place-items: center;
   border-radius: 999px;
-  background: #f5d90a;
+  background: #fff;
   color: #111113;
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 800;
   line-height: 1;
-  box-shadow: 0 0 0 2px #111113, 0 0 0 3px #f5d90a;
+  box-shadow: 0 0 0 1.5px #111113;
 }
 
 .ref-badge.is-selected {
-  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #f5d90a;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #111113;
 }
 
 .leaflet-tooltip.object-label.size-lg {

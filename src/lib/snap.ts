@@ -329,10 +329,13 @@ export async function pasteNoteList(
   let y = placed.y + placed.font * 0.4;
   for (const row of placed.rows) {
     const badge = placed.font * 1.15;
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "#111113";
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.fillStyle = "#f5d90a";
     ctx.arc(placed.x + placed.font * 0.85, y + badge * 0.45, badge * 0.48, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
     ctx.fillStyle = "#111113";
     ctx.font = `800 ${Math.round(placed.font * 0.72)}px sans-serif`;
     ctx.textAlign = "center";

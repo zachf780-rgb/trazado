@@ -176,10 +176,13 @@ function listPng(notes: { n: number; text: string }[], opacity: number): string 
   ctx.fillRect(0, 0, width, canvas.height);
   let y = 18;
   for (const row of wrapped) {
-    ctx.fillStyle = "#f5d90a";
+    ctx.fillStyle = "#ffffff";
     ctx.beginPath();
     ctx.arc(28, y + 16, 16, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = "#111113";
+    ctx.lineWidth = 2;
+    ctx.stroke();
     ctx.fillStyle = "#111113";
     ctx.font = "bold 18px sans-serif";
     ctx.textAlign = "center";

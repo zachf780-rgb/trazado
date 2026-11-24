@@ -219,6 +219,7 @@ export function PlantApp() {
 	const [basemap, setBasemap] = useState("satellite");
 	const [shots, setShots] = useState([]);
 	const [shooting, setShooting] = useState(false);
+	const [shotStep, setShotStep] = useState(null);
 	const [query, setQuery] = useState("");
 	const [results, setResults] = useState([]);
 	const [searching, setSearching] = useState(false);
@@ -442,21 +443,154 @@ export function PlantApp() {
 			toast.error(err instanceof Error ? err.message : "PDF failed");
 		}
 	}
-	async function takeSnapshot() {
+	async function cropToBox(host, image, box) {
+		const map = host._trazadoMap;
+		if (!map) return image;
+		const nw = map.latLngToContainerPoint([Math.max(box.south, box.north), Math.min(box.west, box.east)]);
+		const se = map.latLngToContainerPoint([Math.min(box.south, box.north), Math.max(box.west, box.east)]);
+		const ratio = 2;
+		const sx = Math.max(0, Math.min(nw.x, se.x) * ratio);
+		const sy = Math.max(0, Math.min(nw.y, se.y) * ratio);
+		const sw = Math.max(2, Math.abs(se.x - nw.x) * ratio);
+		const sh = Math.max(2, Math.abs(se.y - nw.y) * ratio);
+		const img = await new Promise((resolve, reject) => {
+			const el = new Image();
+			el.onload = () => resolve(el);
+			el.onerror = () => reject(new Error("Could not crop the snapshot"));
+			el.src = image;
+		});
+		const canvas = document.createElement("canvas");
+		canvas.width = Math.round(sw);
+		canvas.height = Math.round(sh);
+		const ctx = canvas.getContext("2d");
+		if (!ctx) return image;
+		ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+		return canvas.toDataURL("image/png");
+	}
+	function boundsOf(host, box) {
+		if (box) return box;
+		const map = host._trazadoMap;
+		if (!map) return null;
+		const bounds = map.getBounds();
+		return { south: bounds.getSouth(), north: bounds.getNorth(), west: bounds.getWest(), east: bounds.getEast() };
+	}
+	function noteIdsInside(box) {
+		const south = Math.min(box.south, box.north);
+		const north = Math.max(box.south, box.north);
+		const west = Math.min(box.west, box.east);
+		const east = Math.max(box.west, box.east);
+		const inside = (ll) => Boolean(ll) && ll.lat >= south && ll.lat <= north && ll.lng >= west && ll.lng <= east;
+		return usePlantStore.getState().notes.filter((note) => inside(note.at) || inside(note.anchor)).map((note) => note.n);
+	}
+	function pullListInto(box) {
+		const board = usePlantStore.getState().board;
+		if (!board) return;
+		const south = Math.min(box.south, box.north);
+		const north = Math.max(box.south, box.north);
+		const west = Math.min(box.west, box.east);
+		const east = Math.max(box.west, box.east);
+		const latSpan = Math.max(north - south, 0.00001);
+		const lngSpan = Math.max(east - west, 0.00001);
+		const height = Math.min(Math.abs(board.north - board.south) || latSpan * 0.28, latSpan * 0.5);
+		const width = Math.min(Math.abs(board.east - board.west) || lngSpan * 0.34, lngSpan * 0.5);
+		const top = north - latSpan * 0.08;
+		const left = west + lngSpan * 0.05;
+		usePlantStore.getState().updateBoard({ opened: true, north: top, south: top - height, west: left, east: left + width });
+	}
+	function listInside(box) {
+		const board = usePlantStore.getState().board;
+		if (!board) return true;
+		const lat = (board.south + board.north) / 2;
+		const lng = (board.west + board.east) / 2;
+		const south = Math.min(box.south, box.north);
+		const north = Math.max(box.south, box.north);
+		const west = Math.min(box.west, box.east);
+		const east = Math.max(box.west, box.east);
+		return lat >= south && lat <= north && lng >= west && lng <= east;
+	}
+	async function captureShot(box) {
 		const host = document.querySelector("[data-map]");
 		if (!(host instanceof HTMLElement)) return;
-		const refs = notesForShot(host);
-		const blocks = plantBlocks(host);
-		const restoreBoard = hideBoard(host);
 		try {
 			const { snapNode } = await import("@/lib/snap");
-			const image = await snapNode(host);
-			setShots((list) => [...list, { image, ...mapShot(host), refs, blocks }]);
+			let image = await snapNode(host);
+			if (box) image = await cropToBox(host, image, box);
+			const frame = boundsOf(host, box);
+			const meta = frame
+				? { ...mapShot(host), lat: (frame.south + frame.north) / 2, lng: (frame.west + frame.east) / 2, south: Math.min(frame.south, frame.north), north: Math.max(frame.south, frame.north), west: Math.min(frame.west, frame.east), east: Math.max(frame.west, frame.east) }
+				: mapShot(host);
+			setShots((list) => [...list, { image, ...meta }]);
+			usePlantStore.getState().setShotKeep(null);
+			usePlantStore.getState().setShotBox(null);
+			setShotStep(null);
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : "Snapshot failed");
-		} finally {
-			restoreBoard?.();
 		}
+	}
+	function beginPlace(box) {
+		const host = document.querySelector("[data-map]");
+		if (!(host instanceof HTMLElement)) return;
+		const frame = boundsOf(host, box);
+		if (!frame) return;
+		const ids = noteIdsInside(frame);
+		const board = usePlantStore.getState().board;
+		if (!board || ids.length === 0) {
+			void captureShot(box);
+			return;
+		}
+		if (!listInside(frame)) pullListInto(frame);
+		usePlantStore.getState().setShotBox(box);
+		usePlantStore.getState().setShotKeep(ids);
+		usePlantStore.getState().select({ type: "board" });
+		setShotStep("place");
+	}
+	function confirmPlace() {
+		const host = document.querySelector("[data-map]");
+		if (!(host instanceof HTMLElement)) return;
+		const box = usePlantStore.getState().shotBox;
+		const frame = boundsOf(host, box);
+		if (frame && !listInside(frame)) {
+			toast.error("Move the list into the shot first");
+			return;
+		}
+		void captureShot(box);
+	}
+	function pageFramePixels() {
+		const host = document.querySelector("[data-map]");
+		if (!(host instanceof HTMLElement)) return null;
+		const ratio = 11 / 8.5;
+		const maxW = host.clientWidth * 0.84;
+		const maxH = host.clientHeight * 0.7;
+		let width = maxW;
+		let height = width / ratio;
+		if (height > maxH) {
+			height = maxH;
+			width = height * ratio;
+		}
+		return { left: (host.clientWidth - width) / 2, top: (host.clientHeight - height) / 2, width, height };
+	}
+	function startPageBoundary() {
+		usePlantStore.getState().setShotBox(null);
+		usePlantStore.getState().setShotKeep(null);
+		setShotStep("frame");
+	}
+	function confirmFrame() {
+		const host = document.querySelector("[data-map]");
+		const map = host instanceof HTMLElement ? host._trazadoMap : null;
+		const frame = pageFramePixels();
+		if (!map || !frame) return;
+		const nw = map.containerPointToLatLng([frame.left, frame.top]);
+		const se = map.containerPointToLatLng([frame.left + frame.width, frame.top + frame.height]);
+		beginPlace({ south: se.lat, north: nw.lat, west: nw.lng, east: se.lng });
+	}
+	function runOptimize() {
+		const changed = usePlantStore.getState().optimizeLabels();
+		toast.success(changed ? "Labels adjusted for this zoom" : "Labels already clear at this zoom");
+	}
+	function cancelShotStep() {
+		usePlantStore.getState().setShotKeep(null);
+		usePlantStore.getState().setShotBox(null);
+		setShotStep(null);
 	}
 	async function downloadSnapshots() {
 		if (shots.length === 0) return;
@@ -466,6 +600,9 @@ export function PlantApp() {
 			await exportPdfPages(shots, `${name}.pdf`);
 			setShots([]);
 			setShooting(false);
+			setShotStep(null);
+			usePlantStore.getState().setShotKeep(null);
+			usePlantStore.getState().setShotBox(null);
 			toast.success("PDF downloaded");
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : "PDF failed");
@@ -568,14 +705,51 @@ export function PlantApp() {
 			"data-screen": "1",
 			children: [
 				mounted && MapCmp ? /* @__PURE__ */ jsx(MapCmp, { basemap }) : null,
+				shotStep === "frame" ? /* @__PURE__ */ jsx("div", {
+					className: "pointer-events-none absolute z-40 border-2 border-dashed border-[#f5d90a]",
+					style: (() => {
+						const frame = pageFramePixels();
+						return frame ? { left: frame.left, top: frame.top, width: frame.width, height: frame.height, boxShadow: "0 0 0 9999px rgba(0,0,0,0.45)" } : { display: "none" };
+					})()
+				}) : null,
 				shooting ? /* @__PURE__ */ jsxs("div", {
-					className: "export-hide pointer-events-auto absolute bottom-28 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-[var(--radius-lg)] border border-border bg-elevated px-2 py-2 shadow-lg",
+					className: "export-hide pointer-events-auto absolute bottom-28 left-1/2 z-50 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-[var(--radius-lg)] border border-border bg-elevated px-2 py-2 shadow-lg",
 					children: [
-						/* @__PURE__ */ jsxs(Button, {
+						shotStep === "frame" ? /* @__PURE__ */ jsx("span", { className: "px-1 text-sm", children: "Pan and zoom so the page is inside the box" }) : null,
+						shotStep === "place" ? /* @__PURE__ */ jsx("span", { className: "px-1 text-sm", children: "Move the list into the shot" }) : null,
+						shotStep === "frame" ? /* @__PURE__ */ jsxs(Button, {
 							size: "sm",
-							onClick: () => void takeSnapshot(),
-							children: [/* @__PURE__ */ jsx(Camera, { className: "size-4" }), shots.length ? ` Snapshot ${shots.length + 1}` : " Snapshot"]
+							onClick: () => confirmFrame(),
+							children: [/* @__PURE__ */ jsx(Check, { className: "size-4" }), " Confirm page"]
+						}) : null,
+						shotStep === "place" ? /* @__PURE__ */ jsxs(Button, {
+							size: "sm",
+							onClick: () => confirmPlace(),
+							children: [/* @__PURE__ */ jsx(Check, { className: "size-4" }), " Confirm list"]
+						}) : null,
+						shotStep == null ? /* @__PURE__ */ jsxs(Button, {
+							size: "sm",
+							onClick: () => beginPlace(null),
+							children: [/* @__PURE__ */ jsx(Camera, { className: "size-4" }), shots.length ? ` Snapshot screen ${shots.length + 1}` : " Snapshot screen"]
+						}) : null,
+						shotStep == null ? /* @__PURE__ */ jsx(Button, {
+							size: "sm",
+							variant: "secondary",
+							onClick: () => startPageBoundary(),
+							children: "Use page boundary"
+						}) : null,
+						/* @__PURE__ */ jsx(Button, {
+							size: "sm",
+							variant: "secondary",
+							onClick: () => runOptimize(),
+							children: "Optimize"
 						}),
+						shotStep != null ? /* @__PURE__ */ jsx(Button, {
+							size: "sm",
+							variant: "ghost",
+							onClick: () => cancelShotStep(),
+							children: "Back"
+						}) : null,
 						/* @__PURE__ */ jsx(Button, {
 							size: "sm",
 							variant: "secondary",
@@ -587,7 +761,7 @@ export function PlantApp() {
 							size: "icon",
 							variant: "ghost",
 							"aria-label": "Cancel snapshots",
-							onClick: () => { setShots([]); setShooting(false); },
+							onClick: () => { setShots([]); setShooting(false); setShotStep(null); usePlantStore.getState().setShotKeep(null); usePlantStore.getState().setShotBox(null); },
 							children: /* @__PURE__ */ jsx(X, { className: "size-4" })
 						})
 					]

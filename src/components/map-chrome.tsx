@@ -72,6 +72,8 @@ export function MapChrome({
   const frames = usePlantStore((s) => s.frames);
   const selection = usePlantStore((s) => s.selection);
   const tool = usePlantStore((s) => s.tool);
+  const shotKeep = usePlantStore((s) => s.shotKeep);
+  const shotBox = usePlantStore((s) => s.shotBox);
   const [, setTick] = useState(0);
   const inners = useRef(new Map<string, L.Map>());
 
@@ -122,7 +124,19 @@ export function MapChrome({
         })}
       </svg>
       {board && notes.length > 0 && board.opened ? (
-        <Board map={map} board={board} notes={notes.map((note) => ({ n: note.n, text: note.text }))} selected={selection?.type === "board"} onGesture={onGesture} />
+        <Board
+          map={map}
+          board={board}
+          notes={(shotKeep ? notes.filter((note) => shotKeep.includes(note.n)) : notes).map((note) => ({ n: note.n, text: note.text }))}
+          selected={selection?.type === "board" || shotKeep != null}
+          onGesture={onGesture}
+        />
+      ) : null}
+      {shotBox ? (
+        <div
+          className="pointer-events-none absolute border-2 border-dashed border-[#f5d90a] bg-[#f5d90a]/10"
+          style={projectBox(map, shotBox)}
+        />
       ) : null}
       {tool === "select"
         ? frames.map((frame) => {
@@ -331,9 +345,10 @@ function Board({
       }}
       onPointerDown={(ev) => {
         if ((ev.target as HTMLElement).dataset.handle) return;
-        if (usePlantStore.getState().tool !== "select") return;
+        const placing = usePlantStore.getState().shotKeep != null;
+        if (usePlantStore.getState().tool !== "select" && !placing) return;
         ev.stopPropagation();
-        if (!selected) return;
+        if (!selected && !placing) return;
         const origin = { ...board };
         grab(ev, map, onGesture, (dLat, dLng) => {
           usePlantStore.getState().updateBoard({
@@ -352,7 +367,7 @@ function Board({
               .sort((a, b) => a.n - b.n)
               .map((note) => (
                 <p key={note.n} className="mb-[0.35em] flex items-start gap-[0.4em] break-words whitespace-pre-wrap">
-                  <span className="mt-[0.1em] inline-grid size-[1.15em] shrink-0 place-items-center rounded-full bg-[#f5d90a] text-[0.85em] font-extrabold text-[#111113]">{note.n}</span>
+                  <span className="mt-[0.1em] inline-grid size-[1.15em] shrink-0 place-items-center rounded-full bg-white text-[0.85em] font-extrabold text-[#111113] ring-1 ring-black">{note.n}</span>
                   <span className="min-w-0 flex-1">{note.text}</span>
                 </p>
               ))

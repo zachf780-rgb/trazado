@@ -53,6 +53,10 @@ interface PlantState extends PlantProject {
   eggPlacing: boolean;
   eggOpen: boolean;
   eggs: { id: string; lat: number; lng: number }[];
+  shotKeep: number[] | null;
+  shotBox: { south: number; north: number; west: number; east: number } | null;
+  setShotKeep: (ids: number[] | null) => void;
+  setShotBox: (box: { south: number; north: number; west: number; east: number } | null) => void;
   unlockEgg: () => void;
   setEggPlacing: (on: boolean) => void;
   placeEgg: (at: LatLng) => void;
@@ -528,6 +532,10 @@ export const usePlantStore = create<PlantState>()(
       eggPlacing: false,
       eggOpen: false,
       eggs: [],
+      shotKeep: null,
+      shotBox: null,
+      setShotKeep: (shotKeep) => set({ shotKeep }),
+      setShotBox: (shotBox) => set({ shotBox }),
       placeSize: "med",
       labelPlate: false,
       labelSize: "md",
