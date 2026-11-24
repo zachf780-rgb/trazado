@@ -185,6 +185,101 @@ function restoreHidden(hidden: HTMLElement[]) {
 		} else el.style.display = "";
 	}
 }
+type ShotMap = {
+	latLngToContainerPoint: (ll: [number, number]) => { x: number; y: number };
+};
+function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) {
+	return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+function fitBoardInShot(host: HTMLElement) {
+	const map = (host as HTMLElement & { _trazadoMap?: ShotMap })._trazadoMap;
+	const board = host.querySelector("[data-board-shot]");
+	if (!map || !(board instanceof HTMLElement) || board.style.display === "none") return null;
+	const saved = { left: board.style.left, top: board.style.top, width: board.style.width, height: board.style.height };
+	const width = host.clientWidth;
+	const height = host.clientHeight;
+	const margin = 10;
+	if (board.offsetWidth > width - margin * 2) board.style.width = `${Math.max(80, width - margin * 2)}px`;
+	if (board.offsetHeight > height - margin * 2) board.style.height = `${Math.max(40, height - margin * 2)}px`;
+	const bw = board.offsetWidth;
+	const bh = board.offsetHeight;
+	const maxX = Math.max(margin, width - bw - margin);
+	const maxY = Math.max(margin, height - bh - margin);
+	const obstacles: { x: number; y: number; w: number; h: number }[] = [];
+	const add = (x: number, y: number, w: number, h: number) => obstacles.push({ x, y, w, h });
+	const state = usePlantStore.getState();
+	for (const line of state.lines) {
+		for (let i = 1; i < line.path.length; i += 1) {
+			const a = line.path[i - 1];
+			const b = line.path[i];
+			if (!a || !b) continue;
+			const pa = map.latLngToContainerPoint([a.lat, a.lng]);
+			const pb = map.latLngToContainerPoint([b.lat, b.lng]);
+			const steps = Math.max(1, Math.ceil(Math.hypot(pb.x - pa.x, pb.y - pa.y) / 16));
+			for (let step = 0; step <= steps; step += 1) {
+				const t = step / steps;
+				add(pa.x + (pb.x - pa.x) * t - 9, pa.y + (pb.y - pa.y) * t - 9, 18, 18);
+			}
+		}
+	}
+	for (const point of state.points) {
+		const at = map.latLngToContainerPoint([point.position.lat, point.position.lng]);
+		add(at.x - 16, at.y - 16, 32, 32);
+	}
+	for (const note of state.notes) {
+		if (!note.at) continue;
+		const at = map.latLngToContainerPoint([note.at.lat, note.at.lng]);
+		add(at.x - 12, at.y - 12, 24, 24);
+	}
+	const hostRect = host.getBoundingClientRect();
+	for (const el of host.querySelectorAll<HTMLElement>(".leaflet-tooltip, .leaflet-div-icon, .leaflet-marker-icon")) {
+		if (el.closest("[data-board-shot]")) continue;
+		const rect = el.getBoundingClientRect();
+		if (rect.width < 2 || rect.height < 2) continue;
+		add(rect.left - hostRect.left - 4, rect.top - hostRect.top - 4, rect.width + 8, rect.height + 8);
+	}
+	const legend = document.querySelector("[data-legend]");
+	if (legend instanceof HTMLElement) {
+		const rect = legend.getBoundingClientRect();
+		add(width - rect.width - 12, height - rect.height - 12, rect.width + 12, rect.height + 12);
+	}
+	const clear = (x: number, y: number) => !obstacles.some((obstacle) => overlaps({ x, y, w: bw, h: bh }, obstacle));
+	const currentX = board.offsetLeft;
+	const currentY = board.offsetTop;
+	const inside = currentX >= margin && currentY >= margin && currentX + bw <= width - margin && currentY + bh <= height - margin;
+	if (inside && clear(currentX, currentY)) return () => {
+		board.style.left = saved.left;
+		board.style.top = saved.top;
+		board.style.width = saved.width;
+		board.style.height = saved.height;
+	};
+	const clampedX = Math.min(maxX, Math.max(margin, currentX));
+	const clampedY = Math.min(maxY, Math.max(margin, currentY));
+	let pick = clear(clampedX, clampedY) ? { x: clampedX, y: clampedY } : null;
+	if (!pick) {
+		let best = Infinity;
+		for (let y = margin; y <= maxY; y += 22) {
+			for (let x = margin; x <= maxX; x += 22) {
+				if (!clear(x, y)) continue;
+				const distance = (x - clampedX) ** 2 + (y - clampedY) ** 2;
+				if (distance < best) {
+					best = distance;
+					pick = { x, y };
+				}
+			}
+		}
+	}
+	if (pick) {
+		board.style.left = `${pick.x}px`;
+		board.style.top = `${pick.y}px`;
+	}
+	return () => {
+		board.style.left = saved.left;
+		board.style.top = saved.top;
+		board.style.width = saved.width;
+		board.style.height = saved.height;
+	};
+}
 export function PlantApp() {
 	const [mounted, setMounted] = useState(false);
 	const [MapCmp, setMapCmp] = useState(null);
@@ -418,6 +513,7 @@ export function PlantApp() {
 		const host = document.querySelector("[data-map]");
 		if (!(host instanceof HTMLElement)) return;
 		const hidden = hideNotesOffMap(host);
+		const restoreBoard = fitBoardInShot(host);
 		try {
 			const { snapNode } = await import("@/lib/snap");
 			const image = await snapNode(host);
@@ -425,6 +521,7 @@ export function PlantApp() {
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : "Snapshot failed");
 		} finally {
+			restoreBoard?.();
 			restoreHidden(hidden);
 		}
 	}

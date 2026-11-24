@@ -26,20 +26,20 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 
 function stamp(pdf: jsPDF, page: number, lat: number, lng: number, title = "") {
   const pageW = pdf.internal.pageSize.getWidth();
-  const size = Math.max(36, Math.round(pageW * 0.03));
+  const size = Math.max(14, Math.round(pageW * 0.015));
   const label = title ? `${title}   ${lat.toFixed(6)}, ${lng.toFixed(6)}` : `${lat.toFixed(6)}, ${lng.toFixed(6)}   p.${page}`;
-  const pad = Math.round(size * 0.55);
-  const height = Math.round(size * 1.7);
-  const width = Math.max(Math.round(size * 10), Math.round(label.length * size * 0.62));
+  pdf.setFont("courier", "bold");
+  pdf.setFontSize(size);
+  const pad = Math.round(size * 0.4);
+  const height = Math.round(size * 1.45);
+  const width = pdf.getTextWidth(label) + pad * 2;
   pdf.setFillColor(17, 17, 19);
   pdf.rect(pad, pad, width, height, "F");
   pdf.setDrawColor(245, 217, 10);
-  pdf.setLineWidth(Math.max(2, size * 0.06));
+  pdf.setLineWidth(Math.max(1, size * 0.05));
   pdf.rect(pad, pad, width, height, "S");
   pdf.setTextColor(248, 250, 252);
-  pdf.setFont("courier", "bold");
-  pdf.setFontSize(size);
-  pdf.text(label, pad + Math.round(size * 0.4), pad + Math.round(size * 1.15));
+  pdf.text(label, pad * 2, pad + Math.round(size * 1.05));
 }
 
 function worldAt(lat: number, lng: number, zoom: number) {
