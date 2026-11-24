@@ -1446,6 +1446,7 @@ export function cableTag(cable: CableType, fiberCount: string): string {
   if (cable === "rg11") return "rg11";
   if (cable === "rock") return "rock";
   if (cable === "flex") return "flex";
+  if (cable === "strand") return "strand";
   const count = fiberCount.trim();
   return count ? `${count}ct` : "fiber";
 }
@@ -1510,6 +1511,8 @@ function aerialDetail(
 ): string {
   const entries = cableEntries(line);
   if (line.aerialMode === "work") {
+    const strands = entries.filter((entry) => entry.cable === "strand").length;
+    const strandLabel = strands > 1 ? `strand x${strands}` : strands === 1 ? "strand" : "";
     if (entries.length === 0) {
       const picked = (line.workOps ?? []).filter(isAerialOp);
       return workLabel(picked.map((op) => ({ op })));
@@ -1517,20 +1520,21 @@ function aerialDetail(
     const rows = line.parallel
       ? ([1, 2] as const).flatMap((slot) => {
           const id = slot === 1 ? line.slot1 : line.slot2;
+          if (id === "strand" || !isCableType(id)) return [];
           const raw = line.cableWork?.[slot - 1]?.op;
           const op = isAerialOp(raw) ? raw : "re";
-          if (!isCableType(id) || !isAerialOp(op)) return [];
+          if (!isAerialOp(op)) return [];
           const count = slot === 1 ? line.fiberCount : line.fiberCount2;
           return [{ op, tag: cableTag(id, count) }];
         })
       : entries.flatMap((entry, index) => {
+          if (entry.cable === "strand" || !isCableType(entry.cable)) return [];
           const raw = line.cableWork?.[index]?.op;
-          if (!isCableType(entry.cable)) return [];
           const op = isAerialOp(raw) ? raw : "re";
           if (!isAerialOp(op)) return [];
           return [{ op, tag: cableTag(entry.cable, entry.count) }];
         });
-    return workLabel(rows);
+    return [workLabel(rows), strandLabel].filter(Boolean).join("/");
   }
   if (line.strandOnly && entries.length === 0) return "strand only";
   const bundle = entries.length >= 2 && entries.some((entry) => entry.cable === "fiber") && entries.some((entry) => entry.cable !== "fiber");

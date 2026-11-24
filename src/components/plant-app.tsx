@@ -378,7 +378,7 @@ export function PlantApp() {
 	const selectedFrame = selection?.type === "frame" ? frames.find((frame) => frame.id === selection.id) : null;
 	const selectedCallout = selection?.type === "callout" ? lines.find((line) => line.id === selection.id) : null;
 	const selectedBoard = selection?.type === "board" ? board : null;
-	const legendOpen = totals.usedLines.length > 0 || totals.removeLines.length > 0 || totals.usedPoints.length > 0 || totals.peds.length > 0 || totals.vaults.length > 0;
+	const legendOpen = totals.usedLines.length > 0 || totals.removeLines.length > 0 || totals.usedPoints.length > 0 || totals.peds.length > 0 || totals.vaults.length > 0 || totals.lash > 0 || totals.strand > 0 || totals.delash > 0 || totals.wreck > 0;
 	const canFinish = draft?.mode === "line" && draft.path.length >= 2 || draft?.mode === "polygon" && draft.path.length >= 3;
 	const showDraftBar = Boolean(draft);
 	const drawingFeet = useMemo(() => {
@@ -1149,7 +1149,7 @@ export function PlantApp() {
 					"data-legend": "1",
 					className: "absolute right-2 bottom-[7.75rem] z-20 max-h-[calc(100dvh-16rem)] w-52 overflow-y-auto rounded-[var(--radius-md)] border border-border bg-elevated/95 px-2 py-1.5 md:right-4 md:bottom-4 md:max-h-[calc(100dvh-6rem)]",
 					children: [
-						totals.usedLines.length > 0 || totals.removeLines.length > 0 || totals.addPipe > 0 || totals.pullOccupied > 0 || totals.delash > 0 || totals.wreck > 0 ? /* @__PURE__ */ jsxs("ul", {
+						totals.usedLines.length > 0 || totals.removeLines.length > 0 || totals.addPipe > 0 || totals.pullOccupied > 0 || totals.delash > 0 || totals.lash > 0 || totals.strand > 0 || totals.wreck > 0 ? /* @__PURE__ */ jsxs("ul", {
 							className: "space-y-1",
 							children: [totals.usedLines.map((preset) => /* @__PURE__ */ jsxs("li", {
 								className: "flex items-baseline justify-between gap-2",
@@ -1195,6 +1195,36 @@ export function PlantApp() {
 								}), /* @__PURE__ */ jsx("span", {
 									className: "font-mono text-xs tabular-nums text-muted-foreground",
 									children: formatFeet(totals.pullOccupied)
+								})]
+							}) : null, totals.lash > 0 ? /* @__PURE__ */ jsxs("li", {
+								className: "flex items-baseline justify-between gap-2",
+								children: [/* @__PURE__ */ jsxs("span", {
+									className: "flex min-w-0 items-center gap-1.5 text-xs",
+									children: [/* @__PURE__ */ jsx("span", {
+										className: "inline-block h-0.5 w-3.5 shrink-0 rounded-full",
+										style: { background: "#c026d3" }
+									}), /* @__PURE__ */ jsx("span", {
+										className: "truncate",
+										children: "Lash"
+									})]
+								}), /* @__PURE__ */ jsx("span", {
+									className: "font-mono text-xs tabular-nums text-muted-foreground",
+									children: formatFeet(totals.lash)
+								})]
+							}) : null, totals.strand > 0 ? /* @__PURE__ */ jsxs("li", {
+								className: "flex items-baseline justify-between gap-2",
+								children: [/* @__PURE__ */ jsxs("span", {
+									className: "flex min-w-0 items-center gap-1.5 text-xs",
+									children: [/* @__PURE__ */ jsx("span", {
+										className: "inline-block h-0.5 w-3.5 shrink-0 rounded-full",
+										style: { background: "#cbd5e1" }
+									}), /* @__PURE__ */ jsx("span", {
+										className: "truncate",
+										children: "Strand"
+									})]
+								}), /* @__PURE__ */ jsx("span", {
+									className: "font-mono text-xs tabular-nums text-muted-foreground",
+									children: formatFeet(totals.strand)
 								})]
 							}) : null, totals.delash > 0 ? /* @__PURE__ */ jsxs("li", {
 								className: "flex items-baseline justify-between gap-2",
@@ -2005,6 +2035,15 @@ function Inspector({ line, point, polygon, overlay, note, frame, board, callout 
 					value: line.footageText ?? "",
 					onChange: (e) => usePlantStore.getState().updateLine(line.id, { footageText: e.target.value.replace(/[^\d.]/g, "").slice(0, 8) })
 				}) : null,
+				line.kind === "aerial-new" ? /* @__PURE__ */ jsxs("label", {
+					className: "mt-2 flex items-center gap-2 text-xs",
+					children: [/* @__PURE__ */ jsx("input", {
+						type: "checkbox",
+						className: "size-3.5 accent-white",
+						checked: line.hideCable === true,
+						onChange: (e) => usePlantStore.getState().updateLine(line.id, { hideCable: e.target.checked })
+					}), "Exclude cable from legend"]
+				}) : null,
 				line.kind === "road" || line.kind === "line" ? null : /* @__PURE__ */ jsxs("label", {
 					className: "mt-3 flex items-center gap-2 text-xs",
 					children: [/* @__PURE__ */ jsx("input", {
@@ -2090,7 +2129,10 @@ function Inspector({ line, point, polygon, overlay, note, frame, board, callout 
 									intoSlot: 0
 								})
 							}), "Join at object"]
-						}) : null, line.kind === "aerial-new" && line.aerialMode === "work" && active && active !== "empty" ? /* @__PURE__ */ jsxs("div", {
+						}) : null, line.kind === "aerial-new" && line.aerialMode === "work" && active === "strand" ? /* @__PURE__ */ jsx("p", {
+							className: "ml-10 text-[10px] text-muted-foreground",
+							children: "Place"
+						}) : null, line.kind === "aerial-new" && line.aerialMode === "work" && active && active !== "empty" && active !== "strand" ? /* @__PURE__ */ jsxs("div", {
 							className: "ml-10 space-y-1",
 							children: [/* @__PURE__ */ jsxs("div", {
 								className: "flex gap-1",
@@ -2199,7 +2241,7 @@ function Inspector({ line, point, polygon, overlay, note, frame, board, callout 
 										if (id === "fiber") keptCounts.push((line.fiberCounts?.[index] ?? "").replace(/\D/g, ""));
 									});
 									const fiberCounts = cables.map((id) => (id === "fiber" ? keptCounts.shift() ?? "" : ""));
-									const cableWork = cables.map((id) => keptWork.get(id)?.shift() ?? { op: line.kind === "aerial-new" && line.aerialMode === "work" ? "re" as const : "" as const, existing: true, wreck: false });
+									const cableWork = cables.map((id) => keptWork.get(id)?.shift() ?? { op: id === "strand" ? "" as const : line.kind === "aerial-new" && line.aerialMode === "work" ? "re" as const : "" as const, existing: true, wreck: false });
 									usePlantStore.getState().updateLine(line.id, {
 										cables,
 										pipeRoles,
@@ -2211,23 +2253,6 @@ function Inspector({ line, point, polygon, overlay, note, frame, board, callout 
 								children: count > 1 ? `${choice.label} ×${count}` : choice.label
 							}, choice.id);
 						}),
-						line.kind === "aerial-new" && line.aerialMode !== "work" ? /* @__PURE__ */ jsx("button", {
-							type: "button",
-							className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", line.strandOnly && line.cables.length === 0 ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
-							onClick: () => usePlantStore.getState().updateLine(line.id, {
-								strandOnly: !(line.strandOnly && line.cables.length === 0),
-								cables: [],
-								cableWork: [],
-								pipeRoles: [],
-								slot1: "",
-								slot2: "",
-								fiberCount: "",
-								fiberCount2: "",
-								fiberCounts: [],
-								emptyPipe: false
-							}),
-							children: "Strand"
-						}) : null,
 						allowsEmpty(line.kind) ? /* @__PURE__ */ jsx("button", {
 							type: "button",
 							className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", line.emptyPipe ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
@@ -2280,6 +2305,18 @@ function Inspector({ line, point, polygon, overlay, note, frame, board, callout 
 						const base = cableChoices(line.kind).find((choice) => choice.id === id)?.label ?? "";
 						const countText = id === "fiber" ? line.fiberCounts?.[index]?.trim() || line.fiberCount : "";
 						const name = id === "fiber" && countText ? `${countText}ct` : base;
+						if (id === "strand") {
+							return /* @__PURE__ */ jsxs("div", {
+								className: "flex items-center gap-1",
+								children: [/* @__PURE__ */ jsx("span", {
+									className: "w-10 truncate text-[10px]",
+									children: name
+								}), /* @__PURE__ */ jsx("span", {
+									className: "text-[10px] text-muted-foreground",
+									children: "Place"
+								})]
+							}, `${id}-${index}`);
+						}
 						const setWork = (patch: Partial<typeof work>) => {
 							const cableWork = alignCableWork(line.cables.length, line.cableWork).map((item, i) => i === index ? { ...item, ...patch } : item);
 							usePlantStore.getState().updateLine(line.id, { cableWork });

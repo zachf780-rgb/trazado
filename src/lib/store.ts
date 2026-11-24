@@ -115,7 +115,7 @@ interface PlantState extends PlantProject {
   updateLine: (
     id: string,
     patch: Partial<
-      Pick<LineFeature, "notes" | "name" | "parallel" | "joinEnds" | "intoSlot" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "fiberCounts" | "emptyPipe" | "remove" | "fiberUnit" | "overrideFootage" | "footageText" | "hideLegend" | "hideFootage" | "labelSize" | "pipeRoles" | "occupied" | "hideSpan" | "aerialMode" | "strandOnly" | "workOps" | "cableWork" | "wreckOut" | "callout" | "calloutDirs" | "calloutSteps" | "stroke" | "weight" | "existing" | "mark">
+      Pick<LineFeature, "notes" | "name" | "parallel" | "joinEnds" | "intoSlot" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "fiberCounts" | "emptyPipe" | "remove" | "fiberUnit" | "overrideFootage" | "footageText" | "hideLegend" | "hideFootage" | "hideCable" | "labelSize" | "pipeRoles" | "occupied" | "hideSpan" | "aerialMode" | "strandOnly" | "workOps" | "cableWork" | "wreckOut" | "callout" | "calloutDirs" | "calloutSteps" | "stroke" | "weight" | "existing" | "mark">
     >,
   ) => void;
   updatePoint: (id: string, patch: Partial<Pick<PointFeature, "name" | "description" | "labelSide" | "riser" | "anchors" | "remove" | "hideLegend" | "pedType" | "pedRotate" | "vaultType" | "size" | "labelSize">>) => void;
@@ -330,6 +330,7 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
       pipeRoles: Array.isArray(line.pipeRoles) ? line.pipeRoles.filter(isPipeRole) : [],
       occupied: line.occupied === true,
       hideSpan: line.hideSpan === true,
+      hideCable: line.hideCable === true,
       stroke: line.kind === "line" && /^#[0-9a-f]{6}$/i.test(line.stroke ?? "") ? line.stroke : "",
       weight: line.kind === "line" && (line.weight === 1.5 || line.weight === 3 || line.weight === 6) ? line.weight : 0,
       existing: line.kind === "line" && line.existing === true,
@@ -975,6 +976,7 @@ export const usePlantStore = create<PlantState>()(
             pipeRoles: [],
             occupied: false,
             hideSpan: false,
+            hideCable: false,
             aerialMode: "new",
             strandOnly: false,
             workOps: [],

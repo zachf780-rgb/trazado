@@ -199,12 +199,12 @@ function listPng(notes: { n: number; text: string }[], opacity: number): string 
 }
 
 function legendPng(lines: LineFeature[], points: PointFeature[]): string {
-  const { footage, removeFootage, counts, usedLines, removeLines, usedPoints, addPipe, pullOccupied, delash, wreck, cables, risers, anchors, peds, vaults } = plantTotals(
+  const { footage, removeFootage, counts, usedLines, removeLines, usedPoints, addPipe, pullOccupied, delash, lash, strand, wreck, cables, risers, anchors, peds, vaults } = plantTotals(
     lines,
     points,
   );
   const pointRows = usedPoints.length + peds.length + vaults.length + (risers > 0 ? 1 : 0) + (anchors > 0 ? 1 : 0);
-  if (usedLines.length === 0 && removeLines.length === 0 && pointRows === 0 && cables.length === 0 && addPipe === 0 && pullOccupied === 0 && delash === 0 && wreck === 0) return "";
+  if (usedLines.length === 0 && removeLines.length === 0 && pointRows === 0 && cables.length === 0 && addPipe === 0 && pullOccupied === 0 && delash === 0 && lash === 0 && strand === 0 && wreck === 0) return "";
 
   const w = 260;
   const rowH = 20;
@@ -213,12 +213,14 @@ function legendPng(lines: LineFeature[], points: PointFeature[]): string {
   const pipeRow = addPipe > 0 ? 1 : 0;
   const occupiedRow = pullOccupied > 0 ? 1 : 0;
   const delashRow = delash > 0 ? 1 : 0;
+  const lashRow = lash > 0 ? 1 : 0;
+  const strandRow = strand > 0 ? 1 : 0;
   const wreckRow = wreck > 0 ? 1 : 0;
   const gap = usedLines.length > 0 && pointRows > 0 ? 8 : 0;
   const h =
     pad * 2 +
     titleH +
-    (usedLines.length + removeLines.length + pipeRow + occupiedRow + delashRow + wreckRow + cables.length) * rowH +
+    (usedLines.length + removeLines.length + pipeRow + occupiedRow + delashRow + lashRow + strandRow + wreckRow + cables.length) * rowH +
     gap +
     pointRows * 18;
   const canvas = document.createElement("canvas");
@@ -274,6 +276,32 @@ function legendPng(lines: LineFeature[], points: PointFeature[]): string {
     ctx.textAlign = "right";
     ctx.fillStyle = "#c8ccd4";
     ctx.fillText(formatFeet(pullOccupied), w - pad, y);
+    ctx.textAlign = "left";
+    y += rowH;
+  }
+
+  if (lash > 0) {
+    ctx.fillStyle = "#c026d3";
+    ctx.fillRect(pad, y - 7, 16, 4);
+    ctx.fillStyle = "#e8eaee";
+    ctx.textAlign = "left";
+    ctx.fillText("Lash", pad + 22, y);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#c8ccd4";
+    ctx.fillText(formatFeet(lash), w - pad, y);
+    ctx.textAlign = "left";
+    y += rowH;
+  }
+
+  if (strand > 0) {
+    ctx.fillStyle = "#cbd5e1";
+    ctx.fillRect(pad, y - 7, 16, 4);
+    ctx.fillStyle = "#e8eaee";
+    ctx.textAlign = "left";
+    ctx.fillText("Strand", pad + 22, y);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#c8ccd4";
+    ctx.fillText(formatFeet(strand), w - pad, y);
     ctx.textAlign = "left";
     y += rowH;
   }
@@ -715,7 +743,7 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
     overlayHrefs[ov.id] = `files/${name}`;
   });
 
-  const { footage, removeFootage, counts, usedLines, removeLines, usedPoints, addPipe, pullOccupied, delash, wreck, cables, risers, anchors, peds, vaults } = plantTotals(
+  const { footage, removeFootage, counts, usedLines, removeLines, usedPoints, addPipe, pullOccupied, delash, lash, strand, wreck, cables, risers, anchors, peds, vaults } = plantTotals(
     project.lines,
     project.points,
   );
@@ -737,6 +765,16 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
     ...(pullOccupied > 0
       ? [
           `<tr><td><font color="#2563eb">Pull occupied</font></td><td align="right">${escapeXml(formatFeet(pullOccupied))}</td></tr>`,
+        ]
+      : []),
+    ...(lash > 0
+      ? [
+          `<tr><td><font color="#c026d3">Lash</font></td><td align="right">${escapeXml(formatFeet(lash))}</td></tr>`,
+        ]
+      : []),
+    ...(strand > 0
+      ? [
+          `<tr><td><font color="#cbd5e1">Strand</font></td><td align="right">${escapeXml(formatFeet(strand))}</td></tr>`,
         ]
       : []),
     ...(delash > 0
@@ -941,6 +979,7 @@ ${slashXml(slashMarks(path))}`;
           (line.pipeRoles ?? []).length > 0 ? `<Data name="pipeRoles"><value>${escapeXml(line.pipeRoles.join(","))}</value></Data>` : "",
           line.occupied ? `<Data name="occupied"><value>1</value></Data>` : "",
           line.hideSpan ? `<Data name="hideSpan"><value>1</value></Data>` : "",
+          line.hideCable ? `<Data name="hideCable"><value>1</value></Data>` : "",
           line.aerialMode === "work" ? `<Data name="aerialMode"><value>work</value></Data>` : "",
           line.strandOnly ? `<Data name="strandOnly"><value>1</value></Data>` : "",
           (line.workOps ?? []).length > 0 ? `<Data name="workOps"><value>${line.workOps.join(",")}</value></Data>` : "",
@@ -1561,6 +1600,7 @@ export async function parsePlantFile(file: File): Promise<
         pipeRoles: dataValue(pm, "pipeRoles").split(",").filter((role): role is "ug" | "width" | "share" => role === "ug" || role === "width" || role === "share"),
         occupied: dataValue(pm, "occupied") === "1",
         hideSpan: dataValue(pm, "hideSpan") === "1",
+        hideCable: dataValue(pm, "hideCable") === "1",
         aerialMode: dataValue(pm, "aerialMode") === "work" || kind === "aerial-overlash" ? "work" : "new",
         strandOnly: dataValue(pm, "strandOnly") === "1",
         workOps: dataValue(pm, "workOps").split(",").filter((op): op is "de" | "re" | "ol" => op === "de" || op === "re" || op === "ol"),

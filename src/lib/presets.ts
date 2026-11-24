@@ -339,6 +339,7 @@ export function allowedCables(kind: LineKind | undefined): CableType[] {
   if (kind === "road") return [];
   if (kind === "drop") return drop;
   if (kind === "ug-pull") return [...coax, ...drop];
+  if (kind === "aerial-new") return [...coax, "strand"];
   return coax;
 }
 
@@ -370,6 +371,7 @@ const CABLE_LABEL: Record<CableType, string> = {
   "625": ".625",
   "875": ".875",
   fiber: "Fiber",
+  strand: "Strand",
   rg6: "rg6",
   rg11: "rg11",
   rock: "rock drop",
@@ -398,7 +400,7 @@ function aerialPairs(line: LineFeature): { work: CableWork; entry: { cable: Cabl
   if (line.parallel) {
     const works = alignCableWork(2, line.cableWork);
     return [line.slot1, line.slot2].flatMap((slot, index) => {
-      if (!isCableType(slot) || (slot !== "625" && slot !== "875" && slot !== "fiber")) return [];
+      if (!isCableType(slot) || (slot !== "625" && slot !== "875" && slot !== "fiber" && slot !== "strand")) return [];
       const work = works[index];
       if (!work) return [];
       return [{ work, entry: { cable: slot, count: index === 0 ? line.fiberCount : line.fiberCount2 } }];
@@ -420,6 +422,8 @@ export function plantTotals(
   let addPipe = 0;
   let pullOccupied = 0;
   let delash = 0;
+  let lash = 0;
+  let strand = 0;
   let wreck = 0;
   const ug = { "625": 0, "875": 0 };
   const ae = { "625": 0, "875": 0 };
@@ -444,25 +448,39 @@ export function plantTotals(
     if (line.kind === "aerial-new") {
       const pairs = aerialPairs(line);
       if (line.aerialMode === "work") {
-        const chosen = pairs.length === 0
-          ? (line.workOps ?? []).filter(isAerialOp)
-          : pairs.map((pair) => (isAerialOp(pair.work.op) ? pair.work.op : "re"));
+        const worked = pairs.filter((pair) => pair.entry.cable !== "strand");
+        const chosen = worked.length === 0
+          ? pairs.some((pair) => pair.entry.cable === "strand")
+            ? []
+            : (line.workOps ?? []).filter(isAerialOp)
+          : worked.map((pair) => (isAerialOp(pair.work.op) ? pair.work.op : "re"));
         const ops = new Set(chosen);
         if (ops.has("de")) delash += spanFeet;
-        if (ops.has("re")) footage["aerial-new"] += spanFeet;
+        if (ops.has("re")) lash += spanFeet;
         if (ops.has("ol")) footage["aerial-overlash"] += spanFeet;
-        const marked = (line.cableWork ?? []).some((work) => work?.op === "de" && work?.wreck === true) || pairs.some((pair) => pair.work.op === "de" && pair.work.wreck === true);
+        const marked = (line.cableWork ?? []).some((work) => work?.op === "de" && work?.wreck === true) || pairs.some((pair) => pair.entry.cable !== "strand" && pair.work.op === "de" && pair.work.wreck === true);
         if (marked) wreck += spanFeet;
-        for (const pair of pairs) {
-          const op = isAerialOp(pair.work.op) ? pair.work.op : "re";
-          if (op === "de" || (op === "ol" && pair.work.existing)) continue;
-          addAerialCable(pair.entry, cableFeet, ae, fiber);
+        const strandCopies = entries.filter((entry) => entry.cable === "strand").length;
+        if (strandCopies > 0) strand += spanFeet * strandCopies;
+        if (!line.hideCable) {
+          for (const pair of pairs) {
+            if (pair.entry.cable === "strand") continue;
+            const op = isAerialOp(pair.work.op) ? pair.work.op : "re";
+            if (op === "de" || (op === "ol" && pair.work.existing)) continue;
+            addAerialCable(pair.entry, cableFeet, ae, fiber);
+          }
         }
       } else {
         footage["aerial-new"] += spanFeet;
-        const bundle = entries.length >= 2 && entries.some((entry) => entry.cable === "fiber") && entries.some((entry) => entry.cable !== "fiber");
+        strand += spanFeet;
+        const bundle = entries.length >= 2 && entries.some((entry) => entry.cable === "fiber") && entries.some((entry) => entry.cable !== "fiber" && entry.cable !== "strand");
         if (bundle) footage["aerial-overlash"] += spanFeet;
-        for (const entry of entries) addAerialCable(entry, cableFeet, ae, fiber);
+        if (!line.hideCable) {
+          for (const entry of entries) {
+            if (entry.cable === "strand") continue;
+            addAerialCable(entry, cableFeet, ae, fiber);
+          }
+        }
       }
     } else if (line.kind === "ug-pull") {
       const copies = Math.max(1, entries.length);
@@ -490,7 +508,7 @@ export function plantTotals(
         const count = entry.count.trim();
         fiber.set(count, (fiber.get(count) ?? 0) + cableFeet);
       } else if (entry.cable === "625" || entry.cable === "875") bucket[entry.cable] += cableFeet;
-      else dropFeet[entry.cable] += cableFeet;
+      else if (entry.cable !== "strand") dropFeet[entry.cable] += cableFeet;
     }
   }
   const counts = emptyCounts();
@@ -561,7 +579,7 @@ export function plantTotals(
     ...fiberRows,
     ...dropRows,
   ];
-  return { footage, removeFootage, counts, usedLines, removeLines, usedPoints, grand, addPipe, pullOccupied, delash, wreck, cables, risers, anchors, peds, vaults };
+  return { footage, removeFootage, counts, usedLines, removeLines, usedPoints, grand, addPipe, pullOccupied, delash, lash, strand, wreck, cables, risers, anchors, peds, vaults };
 }
 
 export function linePreset(kind: LineKind): LinePreset {

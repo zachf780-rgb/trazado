@@ -30,7 +30,7 @@ export interface LatLng {
   lng: number;
 }
 
-export const CABLE_IDS = ["625", "875", "fiber", "rg6", "rg11", "rock", "flex"] as const;
+export const CABLE_IDS = ["625", "875", "fiber", "strand", "rg6", "rg11", "rock", "flex"] as const;
 export type CableType = (typeof CABLE_IDS)[number];
 export type SlotChoice = CableType | "empty" | "";
 
@@ -91,6 +91,7 @@ export interface LineFeature {
   pipeRoles: PipeRole[];
   occupied: boolean;
   hideSpan: boolean;
+  hideCable: boolean;
   aerialMode: AerialMode;
   strandOnly: boolean;
   workOps: AerialOp[];
