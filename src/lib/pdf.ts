@@ -1,5 +1,5 @@
 import { jsPDF } from "jspdf";
-import { snapNode, legendImage, pasteLegend } from "./snap";
+import { snapNode, legendImage, pasteLegend, pasteNoteList } from "./snap";
 
 export type MapShot = {
   image: string;
@@ -12,6 +12,8 @@ export type MapShot = {
   north?: number;
   west?: number;
   east?: number;
+  refs?: { n: number; text: string }[];
+  blocks?: { x: number; y: number; w: number; h: number }[];
 };
 
 function loadImage(url: string): Promise<HTMLImageElement> {
@@ -170,9 +172,16 @@ export async function exportPdfPages(pages: MapShot[], filename: string) {
     legendMark && sample
       ? Math.min((sample.width * 0.34) / legendMark.width, (sample.height * 0.62) / legendMark.height, 1)
       : 1;
-  const stamped = legendUrl
-    ? await Promise.all(pages.map(async (page) => ({ ...page, image: await pasteLegend(page.image, legendUrl, snapshotScale) })))
-    : pages;
+  const stamped = await Promise.all(
+    pages.map(async (page) => {
+      const withLegend = legendUrl ? await pasteLegend(page.image, legendUrl, snapshotScale) : page.image;
+      const image =
+        page.refs && page.refs.length > 0
+          ? await pasteNoteList(withLegend, page.refs, page.blocks ?? [], legendMark ? { w: legendMark.width * snapshotScale, h: legendMark.height * snapshotScale } : null)
+          : withLegend;
+      return { ...page, image };
+    }),
+  );
   const images = await Promise.all(stamped.map((page) => loadImage(page.image)));
   const keyUrl = stamped.length > 1 ? await keyImage(stamped) : "";
   const keyPlain = keyUrl ? await loadImage(keyUrl) : null;

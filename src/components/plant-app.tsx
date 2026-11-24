@@ -150,63 +150,27 @@ function isTypingTarget(el) {
 	return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
 }
 var fieldClass = "flex w-full rounded-[var(--radius-sm)] border border-border bg-surface px-3 py-2 text-sm text-foreground shadow-none placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
-function hideNotesOffMap(host: HTMLElement) {
-	const map = (host as HTMLElement & { _trazadoMap?: { getBounds: () => { getNorth: () => number; getSouth: () => number; getEast: () => number; getWest: () => number } } })._trazadoMap;
-	const board = host.querySelector("[data-board-shot]");
-	if (!map || !(board instanceof HTMLElement)) return [] as HTMLElement[];
+function notesForShot(host: HTMLElement) {
+	const map = (host as HTMLElement & { _trazadoMap?: { getBounds: () => { contains: (ll: [number, number]) => boolean } } })._trazadoMap;
+	if (!map) return [];
 	const bounds = map.getBounds();
-	const inside = (ll: { lat: number; lng: number } | null | undefined) =>
-		Boolean(ll) && ll.lat <= bounds.getNorth() && ll.lat >= bounds.getSouth() && ll.lng <= bounds.getEast() && ll.lng >= bounds.getWest();
-	const keep = new Set<number>();
-	for (const note of usePlantStore.getState().notes) {
-		if (inside(note.at) || inside(note.anchor)) keep.add(note.n);
-	}
-	const hidden: HTMLElement[] = [];
-	let shown = 0;
-	for (const row of board.querySelectorAll("p")) {
-		const n = Number(row.querySelector("span")?.textContent);
-		if (!keep.has(n)) {
-			hidden.push(row);
-			row.style.display = "none";
-		} else shown += 1;
-	}
-	if (shown === 0) {
-		hidden.push(board);
-		board.dataset.snapDisplay = board.style.display;
-		board.style.display = "none";
-	}
-	return hidden;
+	const inside = (ll: { lat: number; lng: number } | null | undefined) => Boolean(ll) && bounds.contains([ll.lat, ll.lng]);
+	return usePlantStore.getState().notes
+		.filter((note) => inside(note.at) || inside(note.anchor))
+		.map((note) => ({ n: note.n, text: note.text.trim() }))
+		.filter((note) => note.text)
+		.sort((a, b) => a.n - b.n);
 }
-function restoreHidden(hidden: HTMLElement[]) {
-	for (const el of hidden) {
-		if (el.dataset.boardShot !== undefined || el.hasAttribute("data-board-shot")) {
-			el.style.display = el.dataset.snapDisplay ?? "";
-			delete el.dataset.snapDisplay;
-		} else el.style.display = "";
-	}
-}
-type ShotMap = {
-	latLngToContainerPoint: (ll: [number, number]) => { x: number; y: number };
-};
-function overlaps(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }) {
-	return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-}
-function fitBoardInShot(host: HTMLElement) {
+function plantBlocks(host: HTMLElement) {
+	type ShotMap = { latLngToContainerPoint: (ll: [number, number]) => { x: number; y: number } };
 	const map = (host as HTMLElement & { _trazadoMap?: ShotMap })._trazadoMap;
-	const board = host.querySelector("[data-board-shot]");
-	if (!map || !(board instanceof HTMLElement) || board.style.display === "none") return null;
-	const saved = { left: board.style.left, top: board.style.top, width: board.style.width, height: board.style.height };
-	const width = host.clientWidth;
-	const height = host.clientHeight;
-	const margin = 10;
-	if (board.offsetWidth > width - margin * 2) board.style.width = `${Math.max(80, width - margin * 2)}px`;
-	if (board.offsetHeight > height - margin * 2) board.style.height = `${Math.max(40, height - margin * 2)}px`;
-	const bw = board.offsetWidth;
-	const bh = board.offsetHeight;
-	const maxX = Math.max(margin, width - bw - margin);
-	const maxY = Math.max(margin, height - bh - margin);
-	const obstacles: { x: number; y: number; w: number; h: number }[] = [];
-	const add = (x: number, y: number, w: number, h: number) => obstacles.push({ x, y, w, h });
+	if (!map) return [];
+	const width = Math.max(1, host.clientWidth);
+	const height = Math.max(1, host.clientHeight);
+	const blocks: { x: number; y: number; w: number; h: number }[] = [];
+	const add = (x: number, y: number, w: number, h: number) => {
+		blocks.push({ x: x / width, y: y / height, w: w / width, h: h / height });
+	};
 	const state = usePlantStore.getState();
 	for (const line of state.lines) {
 		for (let i = 1; i < line.path.length; i += 1) {
@@ -215,10 +179,10 @@ function fitBoardInShot(host: HTMLElement) {
 			if (!a || !b) continue;
 			const pa = map.latLngToContainerPoint([a.lat, a.lng]);
 			const pb = map.latLngToContainerPoint([b.lat, b.lng]);
-			const steps = Math.max(1, Math.ceil(Math.hypot(pb.x - pa.x, pb.y - pa.y) / 16));
+			const steps = Math.max(1, Math.ceil(Math.hypot(pb.x - pa.x, pb.y - pa.y) / 14));
 			for (let step = 0; step <= steps; step += 1) {
 				const t = step / steps;
-				add(pa.x + (pb.x - pa.x) * t - 9, pa.y + (pb.y - pa.y) * t - 9, 18, 18);
+				add(pa.x + (pb.x - pa.x) * t - 8, pa.y + (pb.y - pa.y) * t - 8, 16, 16);
 			}
 		}
 	}
@@ -236,48 +200,17 @@ function fitBoardInShot(host: HTMLElement) {
 		if (el.closest("[data-board-shot]")) continue;
 		const rect = el.getBoundingClientRect();
 		if (rect.width < 2 || rect.height < 2) continue;
-		add(rect.left - hostRect.left - 4, rect.top - hostRect.top - 4, rect.width + 8, rect.height + 8);
+		add(rect.left - hostRect.left - 3, rect.top - hostRect.top - 3, rect.width + 6, rect.height + 6);
 	}
-	const legend = document.querySelector("[data-legend]");
-	if (legend instanceof HTMLElement) {
-		const rect = legend.getBoundingClientRect();
-		add(width - rect.width - 12, height - rect.height - 12, rect.width + 12, rect.height + 12);
-	}
-	const clear = (x: number, y: number) => !obstacles.some((obstacle) => overlaps({ x, y, w: bw, h: bh }, obstacle));
-	const currentX = board.offsetLeft;
-	const currentY = board.offsetTop;
-	const inside = currentX >= margin && currentY >= margin && currentX + bw <= width - margin && currentY + bh <= height - margin;
-	if (inside && clear(currentX, currentY)) return () => {
-		board.style.left = saved.left;
-		board.style.top = saved.top;
-		board.style.width = saved.width;
-		board.style.height = saved.height;
-	};
-	const clampedX = Math.min(maxX, Math.max(margin, currentX));
-	const clampedY = Math.min(maxY, Math.max(margin, currentY));
-	let pick = clear(clampedX, clampedY) ? { x: clampedX, y: clampedY } : null;
-	if (!pick) {
-		let best = Infinity;
-		for (let y = margin; y <= maxY; y += 22) {
-			for (let x = margin; x <= maxX; x += 22) {
-				if (!clear(x, y)) continue;
-				const distance = (x - clampedX) ** 2 + (y - clampedY) ** 2;
-				if (distance < best) {
-					best = distance;
-					pick = { x, y };
-				}
-			}
-		}
-	}
-	if (pick) {
-		board.style.left = `${pick.x}px`;
-		board.style.top = `${pick.y}px`;
-	}
+	return blocks;
+}
+function hideBoard(host: HTMLElement) {
+	const board = host.querySelector("[data-board-shot]");
+	if (!(board instanceof HTMLElement)) return null;
+	const display = board.style.display;
+	board.style.display = "none";
 	return () => {
-		board.style.left = saved.left;
-		board.style.top = saved.top;
-		board.style.width = saved.width;
-		board.style.height = saved.height;
+		board.style.display = display;
 	};
 }
 export function PlantApp() {
@@ -512,17 +445,17 @@ export function PlantApp() {
 	async function takeSnapshot() {
 		const host = document.querySelector("[data-map]");
 		if (!(host instanceof HTMLElement)) return;
-		const hidden = hideNotesOffMap(host);
-		const restoreBoard = fitBoardInShot(host);
+		const refs = notesForShot(host);
+		const blocks = plantBlocks(host);
+		const restoreBoard = hideBoard(host);
 		try {
 			const { snapNode } = await import("@/lib/snap");
 			const image = await snapNode(host);
-			setShots((list) => [...list, { image, ...mapShot(host) }]);
+			setShots((list) => [...list, { image, ...mapShot(host), refs, blocks }]);
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : "Snapshot failed");
 		} finally {
 			restoreBoard?.();
-			restoreHidden(hidden);
 		}
 	}
 	async function downloadSnapshots() {

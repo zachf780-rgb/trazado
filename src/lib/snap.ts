@@ -231,3 +231,119 @@ export async function pasteLegend(pageUrl: string, legendUrl: string, forcedScal
   ctx.drawImage(mark, page.width - w - margin, page.height - h - margin, w, h);
   return canvas.toDataURL("image/png");
 }
+
+function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (ctx.measureText(next).width <= maxWidth) {
+      line = next;
+      continue;
+    }
+    if (line) lines.push(line);
+    line = word;
+  }
+  if (line) lines.push(line);
+  return lines.length > 0 ? lines : [""];
+}
+
+function boxHits(
+  box: { x: number; y: number; w: number; h: number },
+  obstacles: { x: number; y: number; w: number; h: number }[],
+) {
+  return obstacles.some((obstacle) => box.x < obstacle.x + obstacle.w && box.x + box.w > obstacle.x && box.y < obstacle.y + obstacle.h && box.y + box.h > obstacle.y);
+}
+
+/** Reference notes for one snapshot, parked above the legend unless that would cover the plant. */
+export async function pasteNoteList(
+  pageUrl: string,
+  refs: { n: number; text: string }[],
+  blocks: { x: number; y: number; w: number; h: number }[],
+  legend: { w: number; h: number } | null,
+): Promise<string> {
+  if (refs.length === 0) return pageUrl;
+  const page = await loadImage(pageUrl);
+  const canvas = document.createElement("canvas");
+  canvas.width = page.width;
+  canvas.height = page.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return pageUrl;
+  ctx.drawImage(page, 0, 0);
+  const margin = Math.round(Math.min(page.width, page.height) * 0.02);
+  const gap = Math.round(margin * 0.7);
+  const legendW = legend?.w ?? 0;
+  const legendH = legend?.h ?? 0;
+  const legendX = page.width - legendW - margin;
+  const legendY = page.height - legendH - margin;
+  const obstacles = blocks.map((block) => ({
+    x: block.x * page.width,
+    y: block.y * page.height,
+    w: block.w * page.width,
+    h: block.h * page.height,
+  }));
+  if (legendW > 0) obstacles.push({ x: legendX - 6, y: legendY - 6, w: legendW + 12, h: legendH + 12 });
+  obstacles.push({ x: 0, y: 0, w: page.width * 0.46, h: page.height * 0.07 });
+  const readable = Math.max(15, Math.round(page.width * 0.012));
+  const fonts = [readable, Math.round(readable * 0.86), Math.round(readable * 0.74)].filter((size, index, all) => size >= 12 && all.indexOf(size) === index);
+  const widths = [Math.max(legendW, page.width * 0.26), page.width * 0.34, page.width * 0.46];
+  let placed: { x: number; y: number; font: number; width: number; rows: { n: number; lines: string[] }[] } | null = null;
+  for (const font of fonts) {
+    ctx.font = `600 ${font}px sans-serif`;
+    for (const width of widths) {
+      const textWidth = width - font * 2.4;
+      const rows = refs.map((ref) => ({ n: ref.n, lines: wrapLines(ctx, ref.text, textWidth) }));
+      const height = rows.reduce((sum, row) => sum + Math.max(1, row.lines.length) * font * 1.28, font * 0.8);
+      const candidates = [
+        { x: legendX + legendW - width, y: legendY - height - gap },
+        { x: margin, y: page.height - height - margin },
+        { x: margin, y: page.height * 0.08 },
+        { x: page.width - width - margin, y: page.height * 0.08 },
+        { x: margin, y: margin },
+      ];
+      for (let y = margin; y < page.height - height - margin && candidates.length < 40; y += Math.max(28, font * 2)) {
+        candidates.push({ x: margin, y });
+        candidates.push({ x: page.width - width - margin, y });
+      }
+      for (const candidate of candidates) {
+        const box = { x: candidate.x, y: candidate.y, w: width, h: height };
+        if (box.x < margin || box.y < margin || box.x + box.w > page.width - margin || box.y + box.h > page.height - margin) continue;
+        if (boxHits(box, obstacles)) continue;
+        placed = { ...candidate, font, width, rows };
+        break;
+      }
+      if (placed) break;
+    }
+    if (placed) break;
+  }
+  if (!placed) return pageUrl;
+  ctx.fillStyle = "rgba(17,17,19,0.94)";
+  ctx.strokeStyle = "rgba(255,255,255,0.75)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(placed.x, placed.y, placed.width, placed.rows.reduce((sum, row) => sum + Math.max(1, row.lines.length) * placed.font * 1.28, placed.font * 0.8), 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.textBaseline = "top";
+  let y = placed.y + placed.font * 0.4;
+  for (const row of placed.rows) {
+    const badge = placed.font * 1.15;
+    ctx.beginPath();
+    ctx.fillStyle = "#f5d90a";
+    ctx.arc(placed.x + placed.font * 0.85, y + badge * 0.45, badge * 0.48, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#111113";
+    ctx.font = `800 ${Math.round(placed.font * 0.72)}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.fillText(String(row.n), placed.x + placed.font * 0.85, y + badge * 0.16);
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#f8fafc";
+    ctx.font = `600 ${placed.font}px sans-serif`;
+    row.lines.forEach((line, index) => {
+      ctx.fillText(line, placed.x + placed.font * 1.7, y + index * placed.font * 1.28);
+    });
+    y += Math.max(1, row.lines.length) * placed.font * 1.28;
+  }
+  return canvas.toDataURL("image/png");
+}
