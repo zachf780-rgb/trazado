@@ -115,10 +115,10 @@ interface PlantState extends PlantProject {
   updateLine: (
     id: string,
     patch: Partial<
-      Pick<LineFeature, "notes" | "name" | "parallel" | "joinEnds" | "intoSlot" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "fiberCounts" | "emptyPipe" | "remove" | "fiberUnit" | "overrideFootage" | "footageText" | "hideLegend" | "hideFootage" | "hideCable" | "labelSize" | "pipeRoles" | "occupied" | "hideSpan" | "aerialMode" | "strandOnly" | "workOps" | "cableWork" | "wreckOut" | "callout" | "calloutDirs" | "calloutSteps" | "stroke" | "weight" | "existing" | "mark">
+      Pick<LineFeature, "notes" | "name" | "parallel" | "joinEnds" | "intoSlot" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "fiberCounts" | "emptyPipe" | "remove" | "fiberUnit" | "overrideFootage" | "footageText" | "hideLegend" | "hideFootage" | "hideCable" | "labelSize" | "pipeRoles" | "occupied" | "hideSpan" | "aerialMode" | "strandOnly" | "strandWreck" | "coaxTag" | "workOps" | "cableWork" | "wreckOut" | "callout" | "calloutDirs" | "calloutSteps" | "stroke" | "weight" | "existing" | "mark">
     >,
   ) => void;
-  updatePoint: (id: string, patch: Partial<Pick<PointFeature, "name" | "description" | "labelSide" | "riser" | "anchors" | "remove" | "hideLegend" | "pedType" | "pedRotate" | "vaultType" | "size" | "labelSize">>) => void;
+  updatePoint: (id: string, patch: Partial<Pick<PointFeature, "name" | "description" | "labelSide" | "riser" | "anchors" | "newAttach" | "makeReady" | "remove" | "hideLegend" | "pedType" | "pedRotate" | "vaultType" | "size" | "labelSize">>) => void;
   updatePolygon: (
     id: string,
     patch: Partial<Pick<PolygonFeature, "name" | "description" | "stroke" | "fill" | "strokeOpacity" | "fillOpacity" | "labelSize">>,
@@ -163,7 +163,7 @@ function countedCables(value: unknown, legacy: unknown, allowed: Set<string>, ca
   const counts = new Map<CableType, number>();
   for (const id of raw) {
     if (!isCable(id) || (allowed.size > 0 && !allowed.has(id))) continue;
-    counts.set(id, Math.min(id === "strand" ? 1 : cap, (counts.get(id) ?? 0) + 1));
+    counts.set(id, Math.min(id === "strand" || id === "coax" ? 1 : cap, (counts.get(id) ?? 0) + 1));
   }
   return CABLE_IDS.filter((id) => counts.has(id)).flatMap((id) => Array.from({ length: counts.get(id) ?? 0 }, () => id));
 }
@@ -195,6 +195,7 @@ function cableFields(line: Partial<LineFeature> & { cable?: unknown }): Pick<
   if (slot1 !== "" && slot1 !== "empty" && line.kind && !allowed.has(slot1)) slot1 = "";
   if (slot2 !== "" && slot2 !== "empty" && line.kind && !allowed.has(slot2)) slot2 = "";
   if (slot1 === "strand" && slot2 === "strand") slot2 = "";
+  if (slot1 === "coax" && slot2 === "coax") slot2 = "";
   return {
     slot1: parallel ? slot1 : "",
     slot2: parallel ? slot2 : "",
@@ -332,6 +333,8 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
       occupied: line.occupied === true,
       hideSpan: line.hideSpan === true,
       hideCable: line.hideCable === true,
+      strandWreck: line.strandWreck === true,
+      coaxTag: typeof line.coaxTag === "string" ? line.coaxTag.replace(/[^\w ./-]/g, "").slice(0, 6) : "",
       stroke: line.kind === "line" && /^#[0-9a-f]{6}$/i.test(line.stroke ?? "") ? line.stroke : "",
       weight: line.kind === "line" && (line.weight === 1.5 || line.weight === 3 || line.weight === 6) ? line.weight : 0,
       existing: line.kind === "line" && line.existing === true,
@@ -362,6 +365,8 @@ function sanitizeProject(raw: Partial<PlantProject>): Snapshot & Pick<PlantProje
           : "top",
       riser: point.kind === "pole" && point.riser === true,
       anchors: readAnchors(point),
+      newAttach: point.kind === "pole" && point.newAttach === true,
+      makeReady: point.kind === "pole" && typeof point.makeReady === "string" ? point.makeReady.replace(/[^0-9.]/g, "").slice(0, 8) : "",
       remove: point.remove === true,
       hideLegend: point.hideLegend === true,
       pedType: point.kind === "pedestal" && isPedType(point.pedType) ? point.pedType : "",
@@ -828,6 +833,8 @@ export const usePlantStore = create<PlantState>()(
           labelSide: "top",
           riser: false,
           anchors: [],
+          newAttach: false,
+          makeReady: "",
           remove: false,
           hideLegend: false,
           pedType: "",
@@ -980,6 +987,8 @@ export const usePlantStore = create<PlantState>()(
             hideCable: false,
             aerialMode: "new",
             strandOnly: false,
+            strandWreck: false,
+            coaxTag: "",
             workOps: [],
             cableWork: [],
             wreckOut: false,

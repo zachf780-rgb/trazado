@@ -378,7 +378,7 @@ export function PlantApp() {
 	const selectedFrame = selection?.type === "frame" ? frames.find((frame) => frame.id === selection.id) : null;
 	const selectedCallout = selection?.type === "callout" ? lines.find((line) => line.id === selection.id) : null;
 	const selectedBoard = selection?.type === "board" ? board : null;
-	const legendOpen = totals.usedLines.length > 0 || totals.removeLines.length > 0 || totals.usedPoints.length > 0 || totals.peds.length > 0 || totals.vaults.length > 0 || totals.lash > 0 || totals.strand > 0 || totals.cables.length > 0 || totals.delash > 0 || totals.wreck > 0;
+	const legendOpen = totals.usedLines.length > 0 || totals.removeLines.length > 0 || totals.usedPoints.length > 0 || totals.peds.length > 0 || totals.vaults.length > 0 || totals.lash > 0 || totals.strand > 0 || totals.cables.length > 0 || totals.delash > 0 || totals.wreck > 0 || totals.poleAttach > 0 || totals.makeReady > 0;
 	const canFinish = draft?.mode === "line" && draft.path.length >= 2 || draft?.mode === "polygon" && draft.path.length >= 3;
 	const showDraftBar = Boolean(draft);
 	const drawingFeet = useMemo(() => {
@@ -1358,6 +1358,25 @@ export function PlantApp() {
 								}) : null
 							]
 						}) : null,
+						totals.poleAttach > 0 || totals.makeReady > 0 ? /* @__PURE__ */ jsxs("ul", {
+							className: "mt-1.5 space-y-1 border-t border-border pt-1.5",
+							children: [
+								totals.poleAttach > 0 ? /* @__PURE__ */ jsxs("li", {
+									className: "flex items-center justify-between gap-2 text-xs",
+									children: [/* @__PURE__ */ jsx("span", { children: "Pole new attach" }), /* @__PURE__ */ jsx("span", {
+										className: "font-mono tabular-nums text-muted-foreground",
+										children: totals.poleAttach
+									})]
+								}) : null,
+								totals.makeReady > 0 ? /* @__PURE__ */ jsxs("li", {
+									className: "flex items-center justify-between gap-2 text-xs",
+									children: [/* @__PURE__ */ jsx("span", { children: "EST M.R." }), /* @__PURE__ */ jsx("span", {
+										className: "font-mono tabular-nums text-muted-foreground",
+										children: `$${Math.round(totals.makeReady).toLocaleString("en-US")}`
+									})]
+								}) : null
+							]
+						}) : null,
 						totals.peds.length > 0 ? /* @__PURE__ */ jsx("ul", {
 							className: cn("space-y-1", (totals.usedLines.length > 0 || totals.usedPoints.length > 0 || totals.risers > 0 || totals.anchors > 0) && "mt-1.5 border-t border-border pt-1.5"),
 							children: totals.peds.map((ped) => /* @__PURE__ */ jsxs("li", {
@@ -1602,6 +1621,10 @@ function setLineSlot(line, slot, id) {
 	let slot1 = slot === 1 ? line.slot1 === id ? "" : id : line.slot1;
 	let slot2 = slot === 2 ? line.slot2 === id ? "" : id : line.slot2;
 	if (id === "strand" && slot1 === "strand" && slot2 === "strand") {
+		if (slot === 1) slot2 = "";
+		else slot1 = "";
+	}
+	if (id === "coax" && slot1 === "coax" && slot2 === "coax") {
 		if (slot === 1) slot2 = "";
 		else slot1 = "";
 	}
@@ -2133,9 +2156,6 @@ function Inspector({ line, point, polygon, overlay, note, frame, board, callout 
 									intoSlot: 0
 								})
 							}), "Join at object"]
-						}) : null, line.kind === "aerial-new" && line.aerialMode === "work" && active === "strand" ? /* @__PURE__ */ jsx("p", {
-							className: "ml-10 text-[10px] text-muted-foreground",
-							children: "Place"
 						}) : null, line.kind === "aerial-new" && line.aerialMode === "work" && active && active !== "empty" && active !== "strand" ? /* @__PURE__ */ jsxs("div", {
 							className: "ml-10 space-y-1",
 							children: [/* @__PURE__ */ jsxs("div", {
@@ -2218,8 +2238,8 @@ function Inspector({ line, point, polygon, overlay, note, frame, board, callout 
 											? count >= cap ? [] : Array.from({ length: count + 1 }, () => choice.id)
 											: [choice.id]
 										: cableChoices(line.kind).flatMap((item) => {
-											const n = item.id === "strand"
-												? item.id === choice.id ? (count > 0 ? 0 : 1) : line.cables.includes("strand") ? 1 : 0
+											const n = item.id === "strand" || item.id === "coax"
+												? item.id === choice.id ? (count > 0 ? 0 : 1) : line.cables.includes(item.id) ? 1 : 0
 												: item.id === choice.id ? (count >= cap ? 0 : count + 1) : line.cables.filter((id) => id === item.id).length;
 											return Array.from({ length: n }, () => item.id);
 										});
@@ -2311,18 +2331,7 @@ function Inspector({ line, point, polygon, overlay, note, frame, board, callout 
 						const base = cableChoices(line.kind).find((choice) => choice.id === id)?.label ?? "";
 						const countText = id === "fiber" ? line.fiberCounts?.[index]?.trim() || line.fiberCount : "";
 						const name = id === "fiber" && countText ? `${countText}ct` : base;
-						if (id === "strand") {
-							return /* @__PURE__ */ jsxs("div", {
-								className: "flex items-center gap-1",
-								children: [/* @__PURE__ */ jsx("span", {
-									className: "w-10 truncate text-[10px]",
-									children: name
-								}), /* @__PURE__ */ jsx("span", {
-									className: "text-[10px] text-muted-foreground",
-									children: "Place"
-								})]
-							}, `${id}-${index}`);
-						}
+						if (id === "strand") return null;
 						const setWork = (patch: Partial<typeof work>) => {
 							const cableWork = alignCableWork(line.cables.length, line.cableWork).map((item, i) => i === index ? { ...item, ...patch } : item);
 							usePlantStore.getState().updateLine(line.id, { cableWork });
@@ -2363,6 +2372,40 @@ function Inspector({ line, point, polygon, overlay, note, frame, board, callout 
 							}) : null]
 						}, `${id}-${index}`);
 					})
+				}) : null,
+				line.kind === "aerial-new" && (line.cables.includes("strand") || line.slot1 === "strand" || line.slot2 === "strand") ? /* @__PURE__ */ jsxs("div", {
+					className: "mt-2 flex items-center gap-1",
+					children: [/* @__PURE__ */ jsx("span", {
+						className: "w-12 text-[10px] text-muted-foreground",
+						children: "Strand"
+					}), [["new", "New"], ["wreck", "Wreck out"]].map(([id, label]) => /* @__PURE__ */ jsx("button", {
+						type: "button",
+						className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", (line.strandWreck ? "wreck" : "new") === id ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
+						onClick: () => usePlantStore.getState().updateLine(line.id, { strandWreck: id === "wreck" }),
+						children: label
+					}, id))]
+				}) : null,
+				line.kind === "aerial-new" && (line.cables.includes("coax") || line.slot1 === "coax" || line.slot2 === "coax") ? /* @__PURE__ */ jsxs("div", {
+					className: "mt-2 space-y-1",
+					children: [/* @__PURE__ */ jsx("p", {
+						className: "text-[10px] text-muted-foreground",
+						children: "Generic coax"
+					}), /* @__PURE__ */ jsxs("div", {
+						className: "flex flex-wrap items-center gap-1",
+						children: [[["trunk", "Trunk"], ["feeder", "Feeder"]].map(([id, label]) => /* @__PURE__ */ jsx("button", {
+							type: "button",
+							className: cn("rounded-[var(--radius-xs)] border px-2 py-1 text-xs", (line.coaxTag || "") === id ? "border-foreground bg-foreground text-background" : "border-border text-foreground"),
+							onClick: () => usePlantStore.getState().updateLine(line.id, { coaxTag: line.coaxTag === id ? "" : id }),
+							children: label
+						}, id)), /* @__PURE__ */ jsx(Input, {
+							className: "h-7 w-20 px-2 text-xs",
+							maxLength: 6,
+							placeholder: "type",
+							"aria-label": "Coax type",
+							value: line.coaxTag === "trunk" || line.coaxTag === "feeder" ? "" : line.coaxTag || "",
+							onChange: (e) => usePlantStore.getState().updateLine(line.id, { coaxTag: e.target.value.replace(/[^\w ./-]/g, "").slice(0, 6) })
+						})]
+					})]
 				}) : null,
 				line.kind === "ug-pull" && !line.parallel && line.cables.length > 1 ? /* @__PURE__ */ jsxs("label", {
 					className: "mt-2 flex items-center gap-2 text-xs",
@@ -2578,6 +2621,26 @@ function Inspector({ line, point, polygon, overlay, note, frame, board, callout 
 							checked: Boolean(point.riser),
 							onChange: (e) => usePlantStore.getState().updatePoint(point.id, { riser: e.target.checked })
 						}), "Riser"]
+					}), /* @__PURE__ */ jsxs("label", {
+						className: "flex items-center gap-2 text-sm",
+						children: [/* @__PURE__ */ jsx("input", {
+							type: "checkbox",
+							checked: point.newAttach === true,
+							onChange: (e) => usePlantStore.getState().updatePoint(point.id, { newAttach: e.target.checked })
+						}), "New pole attachment"]
+					}), /* @__PURE__ */ jsxs("label", {
+						className: "flex items-center gap-2 text-sm",
+						children: [/* @__PURE__ */ jsx("span", {
+							className: "shrink-0",
+							children: "EST M.R."
+						}), /* @__PURE__ */ jsx(Input, {
+							className: "h-8 px-2 text-xs",
+							inputMode: "decimal",
+							placeholder: "$",
+							"aria-label": "Estimated make ready",
+							value: point.makeReady || "",
+							onChange: (e) => usePlantStore.getState().updatePoint(point.id, { makeReady: e.target.value.replace(/[^0-9.]/g, "").slice(0, 8) })
+						})]
 					}), /* @__PURE__ */ jsxs("div", {
 						className: "flex items-center justify-between gap-2",
 						children: [/* @__PURE__ */ jsx("span", {

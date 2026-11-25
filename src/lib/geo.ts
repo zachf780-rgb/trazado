@@ -1447,6 +1447,7 @@ export function cableTag(cable: CableType, fiberCount: string): string {
   if (cable === "rock") return "rock";
   if (cable === "flex") return "flex";
   if (cable === "strand") return "strand";
+  if (cable === "coax") return fiberCount.trim() || "coax";
   const count = fiberCount.trim();
   return count ? `${count}ct` : "fiber";
 }
@@ -1512,11 +1513,11 @@ function workLabel(ops: { op: "de" | "re" | "ol"; tag?: string }[]): string {
 }
 
 function aerialDetail(
-  line: Pick<LineFeature, "kind" | "parallel" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "aerialMode" | "strandOnly" | "workOps" | "cableWork">,
+  line: Pick<LineFeature, "kind" | "parallel" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "aerialMode" | "strandOnly" | "strandWreck" | "coaxTag" | "workOps" | "cableWork">,
 ): string {
   const entries = cableEntries(line);
   if (line.aerialMode === "work") {
-    const strandLabel = entries.some((entry) => entry.cable === "strand") ? "new strand" : "";
+    const strandLabel = entries.some((entry) => entry.cable === "strand") && !line.strandWreck ? "new strand" : "";
     if (entries.length === 0) {
       const picked = (line.workOps ?? []).filter(isAerialOp);
       return workLabel(picked.map((op) => ({ op })));
@@ -1528,7 +1529,7 @@ function aerialDetail(
           const raw = line.cableWork?.[slot - 1]?.op;
           const op = isAerialOp(raw) ? raw : "re";
           if (!isAerialOp(op)) return [];
-          const count = slot === 1 ? line.fiberCount : line.fiberCount2;
+          const count = id === "coax" ? line.coaxTag || "" : slot === 1 ? line.fiberCount : line.fiberCount2;
           return [{ op, tag: cableTag(id, count) }];
         })
       : entries.flatMap((entry, index) => {
@@ -1536,7 +1537,7 @@ function aerialDetail(
           const raw = line.cableWork?.[index]?.op;
           const op = isAerialOp(raw) ? raw : "re";
           if (!isAerialOp(op)) return [];
-          return [{ op, tag: cableTag(entry.cable, entry.count) }];
+          return [{ op, tag: cableTag(entry.cable, entry.cable === "coax" ? line.coaxTag || "" : entry.count) }];
         });
     const parts = workParts(rows);
     return [parts.de, strandLabel, parts.rest].filter(Boolean).join("/");
@@ -1544,7 +1545,7 @@ function aerialDetail(
   if (line.strandOnly && entries.length === 0) return "strand only";
   const bundle = entries.length >= 2 && entries.some((entry) => entry.cable === "fiber") && entries.some((entry) => entry.cable !== "fiber");
   return groupedTags(entries.map((entry) => {
-    const tag = cableTag(entry.cable, entry.count);
+    const tag = cableTag(entry.cable, entry.cable === "coax" ? line.coaxTag || "" : entry.count);
     return bundle && entry.cable === "fiber" ? `OL ${tag}` : tag;
   }));
 }
@@ -1553,7 +1554,7 @@ export function spanParts(
   feet: number,
   line: Pick<
     LineFeature,
-    "parallel" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "emptyPipe" | "remove" | "kind" | "fiberUnit" | "aerialMode" | "strandOnly" | "workOps" | "cableWork" | "existing" | "mark"
+    "parallel" | "cables" | "slot1" | "slot2" | "fiberCount" | "fiberCount2" | "emptyPipe" | "remove" | "kind" | "fiberUnit" | "aerialMode" | "strandOnly" | "strandWreck" | "coaxTag" | "workOps" | "cableWork" | "existing" | "mark"
   >,
 ): { footage: string; detail: string } {
   if (line.kind === "line" && line.existing) {
@@ -1604,6 +1605,8 @@ export function spanLabel(
     | "fiberUnit"
     | "aerialMode"
     | "strandOnly"
+    | "strandWreck"
+    | "coaxTag"
     | "workOps"
     | "cableWork"
     | "existing"

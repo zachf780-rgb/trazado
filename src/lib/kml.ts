@@ -199,11 +199,11 @@ function listPng(notes: { n: number; text: string }[], opacity: number): string 
 }
 
 function legendPng(lines: LineFeature[], points: PointFeature[]): string {
-  const { footage, removeFootage, counts, usedLines, removeLines, usedPoints, addPipe, pullOccupied, delash, lash, strand, wreck, cables, risers, anchors, peds, vaults } = plantTotals(
+  const { footage, removeFootage, counts, usedLines, removeLines, usedPoints, addPipe, pullOccupied, delash, lash, strand, wreck, cables, risers, anchors, peds, vaults, poleAttach, makeReady } = plantTotals(
     lines,
     points,
   );
-  const pointRows = usedPoints.length + peds.length + vaults.length + (risers > 0 ? 1 : 0) + (anchors > 0 ? 1 : 0);
+  const pointRows = usedPoints.length + peds.length + vaults.length + (risers > 0 ? 1 : 0) + (anchors > 0 ? 1 : 0) + (poleAttach > 0 ? 1 : 0) + (makeReady > 0 ? 1 : 0);
   if (usedLines.length === 0 && removeLines.length === 0 && pointRows === 0 && cables.length === 0 && addPipe === 0 && pullOccupied === 0 && delash === 0 && lash === 0 && strand === 0 && wreck === 0) return "";
 
   const w = 260;
@@ -501,6 +501,32 @@ function legendPng(lines: LineFeature[], points: PointFeature[]): string {
     ctx.fillStyle = "#c8ccd4";
     ctx.fillText(String(anchors), w - pad, y);
     ctx.textAlign = "left";
+    y += 18;
+  }
+
+  if (poleAttach > 0) {
+    ctx.fillStyle = "#e8eaee";
+    ctx.font = '500 11px "IBM Plex Sans", system-ui, sans-serif';
+    ctx.textAlign = "left";
+    ctx.fillText("Pole new attach", pad, y);
+    ctx.textAlign = "right";
+    ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
+    ctx.fillStyle = "#c8ccd4";
+    ctx.fillText(String(poleAttach), w - pad, y);
+    ctx.textAlign = "left";
+    y += 18;
+  }
+
+  if (makeReady > 0) {
+    ctx.fillStyle = "#e8eaee";
+    ctx.font = '500 11px "IBM Plex Sans", system-ui, sans-serif';
+    ctx.textAlign = "left";
+    ctx.fillText("EST M.R.", pad, y);
+    ctx.textAlign = "right";
+    ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
+    ctx.fillStyle = "#c8ccd4";
+    ctx.fillText(`$${Math.round(makeReady).toLocaleString("en-US")}`, w - pad, y);
+    ctx.textAlign = "left";
   }
 
   return canvas.toDataURL("image/png");
@@ -743,7 +769,7 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
     overlayHrefs[ov.id] = `files/${name}`;
   });
 
-  const { footage, removeFootage, counts, usedLines, removeLines, usedPoints, addPipe, pullOccupied, delash, lash, strand, wreck, cables, risers, anchors, peds, vaults } = plantTotals(
+  const { footage, removeFootage, counts, usedLines, removeLines, usedPoints, addPipe, pullOccupied, delash, lash, strand, wreck, cables, risers, anchors, peds, vaults, poleAttach, makeReady } = plantTotals(
     project.lines,
     project.points,
   );
@@ -800,6 +826,12 @@ export async function buildKmz(project: PlantProject, labelPlate = false): Promi
       : []),
     ...(anchors > 0
       ? [`<tr><td>Anchors</td><td align="right">${anchors}</td></tr>`]
+      : []),
+    ...(poleAttach > 0
+      ? [`<tr><td>Pole new attach</td><td align="right">${poleAttach}</td></tr>`]
+      : []),
+    ...(makeReady > 0
+      ? [`<tr><td>EST M.R.</td><td align="right">$${Math.round(makeReady).toLocaleString("en-US")}</td></tr>`]
       : []),
     ...peds.map(
       (ped) => `<tr><td>${escapeXml(ped.label)}</td><td align="right">${ped.count}</td></tr>`,
@@ -982,6 +1014,8 @@ ${slashXml(slashMarks(path))}`;
           line.hideCable ? `<Data name="hideCable"><value>1</value></Data>` : "",
           line.aerialMode === "work" ? `<Data name="aerialMode"><value>work</value></Data>` : "",
           line.strandOnly ? `<Data name="strandOnly"><value>1</value></Data>` : "",
+          line.strandWreck ? `<Data name="strandWreck"><value>1</value></Data>` : "",
+          line.coaxTag ? `<Data name="coaxTag"><value>${escapeXml(line.coaxTag)}</value></Data>` : "",
           (line.workOps ?? []).length > 0 ? `<Data name="workOps"><value>${line.workOps.join(",")}</value></Data>` : "",
           (line.cableWork ?? []).length > 0 ? `<Data name="cableWork"><value>${line.cableWork.map((work) => `${work.op || "-"}:${work.existing ? 1 : 0}:${work.wreck ? 1 : 0}`).join(",")}</value></Data>` : "",
           line.wreckOut ? `<Data name="wreckOut"><value>1</value></Data>` : "",
@@ -1093,6 +1127,8 @@ ${inner}
             : "",
           p.remove ? `<Data name="remove"><value>1</value></Data>` : "",
           p.hideLegend ? `<Data name="hideLegend"><value>1</value></Data>` : "",
+          p.kind === "pole" && p.newAttach ? `<Data name="newAttach"><value>1</value></Data>` : "",
+          p.kind === "pole" && p.makeReady ? `<Data name="makeReady"><value>${escapeXml(p.makeReady)}</value></Data>` : "",
           p.kind === "pedestal" && p.pedType ? `<Data name="pedType"><value>${p.pedType}</value></Data>` : "",
           p.kind === "pedestal" && p.pedRotate ? `<Data name="pedRotate"><value>${pedestalDir(p.pedRotate)}</value></Data>` : "",
           p.kind === "vault" && p.vaultType ? `<Data name="vaultType"><value>${p.vaultType}</value></Data>` : "",
@@ -1603,6 +1639,8 @@ export async function parsePlantFile(file: File): Promise<
         hideCable: dataValue(pm, "hideCable") === "1",
         aerialMode: dataValue(pm, "aerialMode") === "work" || kind === "aerial-overlash" ? "work" : "new",
         strandOnly: dataValue(pm, "strandOnly") === "1",
+        strandWreck: dataValue(pm, "strandWreck") === "1",
+        coaxTag: dataValue(pm, "coaxTag").replace(/[^\w ./-]/g, "").slice(0, 6),
         workOps: dataValue(pm, "workOps").split(",").filter((op): op is "de" | "re" | "ol" => op === "de" || op === "re" || op === "ol"),
         cableWork: dataValue(pm, "cableWork").split(",").filter(Boolean).map((part) => {
           const [op, existing, wreck] = part.split(":");
@@ -1690,6 +1728,8 @@ export async function parsePlantFile(file: File): Promise<
             : "top",
         riser: kind === "pole" && dataValue(pm, "riser") === "1",
         anchors: importedAnchors(kind, pm),
+        newAttach: kind === "pole" && dataValue(pm, "newAttach") === "1",
+        makeReady: kind === "pole" ? dataValue(pm, "makeReady").replace(/[^0-9.]/g, "").slice(0, 8) : "",
         remove: marked,
         hideLegend: dataValue(pm, "hideLegend") === "1",
         pedType: kind === "pedestal" && isPedType(storedPed) ? storedPed : "",
